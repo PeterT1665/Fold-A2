@@ -27,6 +27,7 @@ BLUFF_MULTIWAY = 0.4  # multiplier when 2+ opponents
 BLUFF_RAISE_P = 0.3
 BET_MARGIN = 0.02  # EV edge (x pot) a bet needs over checking
 RAISE_MARGIN = 0.06
+SIZE_TOL = 0.15  # pick randomly among bet sizes within SIZE_TOL x pot of the best EV (hides hand strength)
 
 
 def _lines(state):
@@ -123,15 +124,21 @@ def decide(state, ctx):
         oa_behind = any(cls[s] is OC.OVER_AGGRESSIVE and order(s) > order(me) for s in live)
         if oa_behind and (my_b == rm.NUT or (my_b == rm.STR and info.top_tier)) and rng.random() < 0.7:
             return state.check()  # let the maniac bet, then raise
-        best_ev, best_a, best_eq = R * eq_r * P, 0, eq_r
+        ev_check = R * eq_r * P
+        opts = []
         for frac in BET_SIZES:
             a = commit(min(frac * P, stack))
             f, eq_c = called(a, a / max(P, 1))
             if eq_c < 0.5 and frac > 0.66:
                 continue  # no overbet bluffs / thin overbets
             ev = f * P + (1 - f) * (R * eq_c * (P + 2 * a) - a)
-            if ev > best_ev + BET_MARGIN * P:
-                best_ev, best_a, best_eq = ev, a, eq_c
+            if ev > ev_check + BET_MARGIN * P:
+                opts.append((ev, a, eq_c))
+        best_ev, best_a, best_eq = ev_check, 0, eq_r
+        if opts:
+            top = max(o[0] for o in opts)
+            near = [o for o in opts if o[0] >= top - SIZE_TOL * P]
+            best_ev, best_a, best_eq = rng.choice(near)
         if best_a == 0:
             return state.check()
         if best_eq < 0.42:  # mostly fold equity: gate bluffs

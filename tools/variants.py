@@ -9,3 +9,6 @@ VARIANTS = {
     "combo": {"flop.BET_SIZES": (0.25, 0.33, 0.5, 0.66, 0.85, 1.0),
               "flop.BLUFF_BET_P": (0.3, 0.2, 0.15), "range_model.FOLD_SCALE": 0.7},
 }
+VARIANTS["tol08"] = {"flop.SIZE_TOL": 0.08}
+VARIANTS["tol15"] = {"flop.SIZE_TOL": 0.15}
+VARIANTS["tol30"] = {"flop.SIZE_TOL": 0.30}
