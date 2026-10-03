@@ -71,6 +71,8 @@ _L_BET_TRUST = {
     "l": [.9, .6, .08, .45, .06, .06],
 }
 _L_RAISE = [.9, .35, .05, .3, .08, .1]
+# Raises from a player who rarely raises: on the ladder, rare raisers were weak far less often.
+_L_RAISE_TRUST = [.9, .35, .03, .3, .04, .04]
 
 # --- per-opponent adaptation (shrunk toward a typical player, like preflop) --
 ADAPT_TRUST = True  # trust a player's big bets by how often they bet
@@ -81,6 +83,9 @@ TRUST_LO, TRUST_HI = 0.65, 0.90  # bet freq: <= LO fully trusted, >= HI old mode
 FOLD_PRIOR = 0.45
 ADAPT_SD = False  # stop trusting big bets from players caught bluffing at showdown
 SD_K, SD_PRIOR = 4.0, 0.25
+ADAPT_RAISE = True  # trust a player's raises by how rarely they raise
+RAISE_FREQ_PRIOR = 0.12
+RAISE_LO, RAISE_HI = 0.15, 0.35  # raise freq facing a bet: <= LO trusted, >= HI old model
 SD_LO, SD_HI = 0.20, 0.40  # shrunk weak share of shown big bets: <= LO trust, >= HI old model
 
 
@@ -93,6 +98,11 @@ def bet_freq(st) -> float:
 def fold_rate(st) -> float:
     """How often this player folds facing a postflop bet, shrunk."""
     return (st.facing_folds + PRIOR_K * FOLD_PRIOR) / (st.facing + PRIOR_K)
+
+
+def raise_freq(st) -> float:
+    """How often this player raises when facing a postflop bet, shrunk."""
+    return (st.post_raises + PRIOR_K * RAISE_FREQ_PRIOR) / (st.facing + PRIOR_K)
 
 
 def bluff_share(st) -> float:
@@ -117,7 +127,10 @@ def _lik(kind: str, frac: float, ip: bool, st=None):
             w = max(w, min(1.0, max(0.0, (bluff_share(st) - SD_LO) / (SD_HI - SD_LO))))
         return _blend(_L_BET_TRUST[sz], _L_BET[sz], w)
     if kind == "raise":
-        return _L_RAISE
+        if st is None or not ADAPT_RAISE:
+            return _L_RAISE
+        w = min(1.0, max(0.0, (raise_freq(st) - RAISE_LO) / (RAISE_HI - RAISE_LO)))
+        return _blend(_L_RAISE_TRUST, _L_RAISE, w)
     if kind == "call":
         f = min(frac, 1.2)
         weak, drw = max(0.15, 1 - 0.55 * f), max(0.4, 1 - 0.3 * f)
@@ -139,6 +152,89 @@ def update(w, kind: str, frac: float, ip: bool, cls: OC, st=None):
     l = _lik(kind, frac, ip, st)
     k = _K[cls][kind]
     return normalize([x * (p ** k) for x, p in zip(w, l)])
+
+
+# --- replaying the hand history ---------------------------------------------
+# One implementation for flop, turn and river (they used to keep drifting copies).
+
+
+def preflop_lines(history):
+    """Each player's preflop line (open / 3bet / call) and the number of raises."""
+    raises, out = 0, {}
+    for st, s, k, _ in history:
+        if st != "preflop":
+            continue
+        if k == "raise":
+            out[s] = "3bet" if raises >= 1 else "open"
+            raises += 1
+        elif k == "call" and s not in out:
+            out[s] = "call"
+    return out, raises
+
+
+def street_start_pots(state, streets):
+    """Pot at the start of each street in `streets`; the last one is the current street."""
+    added = {st: 0 for st in streets}
+    sb, street = {}, None
+    for st, s, k, a in state.history:
+        if st != street:
+            street, sb = st, {}
+        if st in added:
+            if k == "raise":
+                added[st] += a - sb.get(s, 0)
+                sb[s] = a
+            elif k == "call":
+                added[st] += a
+                sb[s] = sb.get(s, 0) + a
+    start = {streets[-1]: state.pot - sum(state.street_bets)}
+    for i in range(len(streets) - 2, -1, -1):
+        start[streets[i]] = start[streets[i + 1]] - added[streets[i]]
+    return start
+
+
+def replay(state, ctx, opps, ip_of, init, streets, call_frac="pot_after", draw_hit=None):
+    """Update each opponent's bucket range with every postflop action so far.
+
+    init      : {seat: starting range}
+    streets   : postflop streets to replay, in order, ending with the current one
+    call_frac : how a called bet is sized: "pot_before" = bet / pot before the bet
+                (flop), "pot_after" = bet / pot including it (turn, river)
+    draw_hit  : {draw bucket: (bucket it becomes, share)} applied before the river
+    Returns (ranges, classes) keyed by seat.
+    """
+    cls = {s: ctx.tracker.classify(state.player_at(s)) for s in opps}
+    pstats = {s: ctx.tracker.get(state.player_at(s)) for s in opps}
+    ranges = dict(init)
+    start = street_start_pots(state, streets)
+    for st in streets:
+        if draw_hit and st == "river":  # draws that missed are air now
+            for s in ranges:
+                w = list(ranges[s])
+                for d, (to, share) in draw_hit.items():
+                    w[to] += w[d] * share
+                    w[AIR] += w[d] * (1 - share)
+                    w[d] = 0.0
+                ranges[s] = normalize(w)
+        pot, sb, cur = start[st], {}, 0
+        for hs, s, k, a in state.history:
+            if hs != st:
+                continue
+            kind, frac = None, 0.0
+            if k == "raise":
+                add = a - sb.get(s, 0)
+                kind, frac = ("bet" if cur == 0 else "raise"), add / max(pot, 1)
+                pot += add
+                sb[s], cur = a, a
+            elif k == "call":
+                kind = "call"
+                frac = a / max(pot - a, 1) if call_frac == "pot_before" else a / max(pot, 1)
+                pot += a
+                sb[s] = sb.get(s, 0) + a
+            elif k == "check":
+                kind = "check"
+            if kind and s in ranges:
+                ranges[s] = update(ranges[s], kind, frac, ip_of(s), cls[s], pstats[s])
+    return ranges, cls
 
 
 # --- fold model --------------------------------------------------------------

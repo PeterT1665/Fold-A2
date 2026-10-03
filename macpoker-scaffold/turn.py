@@ -28,6 +28,10 @@ BET_SIZES = (0.33, 0.5, 0.75, 1.0)
 RAISE_SIZES = (0.75, 1.25)
 BET_MARGIN = 0.03  # EV edge (x pot) a bet needs over checking
 RAISE_MARGIN = 0.05
+# Calling a big bet (> BIG_BET x pot) needs this much extra equity: on the ladder,
+# turn/river calls of big bets lost with every hand class except the nuts.
+BIG_BET = 0.5
+BIG_CALL_MARGIN = 0.08
 BLUFF_P = 0.3  # how often an EV-positive bet with < 40% equity is fired
 VALUE_EQ = 0.60  # equity-when-called needed for a pure value raise
 SEMI_EQ = 0.30  # a draw needs this much equity-when-called to raise
@@ -79,52 +83,10 @@ def _combos(state, ctx):
 
 def _ranges(state, ctx, opps, ip_of):
     """Bucket range per opponent from preflop line + flop and turn actions."""
-    lines, raises = {}, 0
-    for st, s, k, _ in state.history:
-        if st == "preflop":
-            if k == "raise":
-                lines[s] = "3bet" if raises else "open"
-                raises += 1
-            elif k == "call" and s not in lines:
-                lines[s] = "call"
-    cls = {s: ctx.tracker.classify(state.player_at(s)) for s in opps}
-    pstats = {s: ctx.tracker.get(state.player_at(s)) for s in opps}
-    # see river._ranges: flat start tilted by the preflop line, real combo counts via _weights
-    ranges = {s: rm.normalize(list(rm._LINE[lines.get(s, "base")])) for s in opps}
-
-    flop_added, sb = 0, {}
-    for st, s, k, a in state.history:
-        if st != "flop":
-            continue
-        if k == "raise":
-            flop_added += a - sb.get(s, 0)
-            sb[s] = a
-        elif k == "call":
-            flop_added += a
-            sb[s] = sb.get(s, 0) + a
-    turn_pot = state.pot - sum(state.street_bets)
-    start = {"turn": turn_pot, "flop": turn_pot - flop_added}
-
-    for st in ("flop", "turn"):
-        pot, sb, cur = start[st], {}, 0
-        for hs, s, k, a in state.history:
-            if hs != st:
-                continue
-            kind, frac = None, 0.0
-            if k == "raise":
-                add = a - sb.get(s, 0)
-                kind, frac = ("bet" if cur == 0 else "raise"), add / max(pot, 1)
-                pot += add
-                sb[s], cur = a, a
-            elif k == "call":
-                kind, frac = "call", a / max(pot, 1)
-                pot += a
-                sb[s] = sb.get(s, 0) + a
-            elif k == "check":
-                kind = "check"
-            if kind and s in ranges:
-                ranges[s] = rm.update(ranges[s], kind, frac, ip_of(s), cls[s], pstats[s])
-    return ranges, cls
+    lines, _ = rm.preflop_lines(state.history)
+    # flat start tilted by the preflop line; river._weights adds the board's real combo counts
+    init = {s: rm.normalize(list(rm._LINE[lines.get(s, "base")])) for s in opps}
+    return rm.replay(state, ctx, opps, ip_of, init, ("flop", "turn"))
 
 
 def _equity(combos, cw, fold=None):
@@ -223,7 +185,8 @@ def _decide(state, ctx):
         return state.raise_to(int(max(state.min_raise_to, min(mine + round(best_a), state.max_raise_to))))
 
     # ------------------------------------------------------------ facing a bet
-    ev_call = R * eq_r * (P + c) - c
+    big = c / max(P - c, 1) > BIG_BET
+    ev_call = R * eq_r * (P + c) - c - (BIG_CALL_MARGIN * (P + c) if big else 0.0)
     best, best_ev, best_x = "fold", 0.0, 0
     if ev_call > best_ev:
         best, best_ev = "call", ev_call
