@@ -96,7 +96,7 @@ def decide(state, ctx):
 
     eq_r = 1.0
     for s in opps:
-        eq_r *= rm.equity(my_b, info.eq, ranges[s])
+        eq_r *= rm.equity(my_b, info.eq, ranges[s], tex)
 
     def called(a, size):
         """(P(all fold), equity if called) for putting in `a` chips."""
@@ -104,7 +104,7 @@ def decide(state, ctx):
         for s in opps:
             cr, pf = rm.call_range(ranges[s], rm.fold_probs(size, cls[s]))
             f *= pf
-            eq *= rm.equity(my_b, info.eq, cr)
+            eq *= rm.equity(my_b, info.eq, cr, tex)
         return f, eq
 
     def commit(a):

@@ -176,7 +176,9 @@ class PostFlopEvaluator:
             return HandInfo(HandClass.WEAK_DRAW, min(eq, 0.24), outs, False, cat)
         if board_plays:
             return HandInfo(HandClass.TRASH, 0.30, 0, False, cat)
-        return HandInfo(HandClass.TRASH, 0.05 if overs else 0.03, 0, False, cat)
+        # air: strength still varies with our high cards (A-high >> 4-high)
+        air = 0.02 + 0.05 * max(hr) / 12 + 0.02 * min(hr) / 12 + (0.01 if overs else 0.0)
+        return HandInfo(HandClass.TRASH, air, 0, False, cat)
 
     # ------------------------------------------------------------ made hands
     def _classify_made(self, cat, info, hc, hr, bc, bnsuit, brmask, bcnt, tex):
