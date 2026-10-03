@@ -20,6 +20,7 @@ from macpoker import Bot  # noqa: E402
 from opponent_tracker import OpponentTracker  # noqa: E402
 from postflop_evaluator import PostFlopEvaluator  # noqa: E402
 from preflop import preflop_action  # noqa: E402
+from preflop_memory import PreflopMemory  # noqa: E402
 from strategy import PostflopStrategy  # noqa: E402
 
 
@@ -34,6 +35,9 @@ class MyBot(Bot):
         self.tracker = OpponentTracker(self.blinds)
         self.evaluator = PostFlopEvaluator()
         self.strategy = PostflopStrategy(self.tracker, self.rng)
+        self.preflop_memory = PreflopMemory()
+        self._button = 0
+        self._start_stacks: list[int] = []
         self._events: list[dict] = []
         self._players: list[int] | None = None
         self._seen_players = False
@@ -45,6 +49,7 @@ class MyBot(Bot):
             self.me = info.get("player", self.me)
             self.blinds = tuple(info.get("blinds", self.blinds))
             self.tracker.blinds = self.blinds
+            self.preflop_memory.set_me(self.me)
         except Exception:
             pass
 
@@ -53,6 +58,8 @@ class MyBot(Bot):
             self._events = []
             self._seen_players = False
             seat = info["seat"]
+            self._button = info.get("button", 0)
+            self._start_stacks = list(info.get("stacks") or [])
             # seats rotate one step per hand; ids are stable (see GameState.players)
             self._players = [(self.me - seat + s) % self.n for s in range(self.n)]
         except Exception:
@@ -66,6 +73,13 @@ class MyBot(Bot):
             if self._players:
                 showdown = [int(s) for s in (info.get("revealed") or {})]
                 self.tracker.observe_hand(self._events, self._players, showdown)
+        except Exception:
+            pass
+        try:
+            if self._players:
+                self.preflop_memory.observe_hand(
+                    self._events, self._players, self._button, self._start_stacks
+                )
         except Exception:
             pass
         self._events = []
@@ -95,12 +109,7 @@ class MyBot(Bot):
             return state.fold()
 
         if not state.board:
-            raiser = None
-            for h in reversed(state.history):
-                if h[0] == "preflop" and h[2] == "raise" and h[1] != state.seat:
-                    raiser = self.tracker.classify(state.player_at(h[1]))
-                    break
-            return preflop_action(state, self.rng, self.blinds[1], raiser)
+            return preflop_action(state, self.rng, self.blinds[1], self.preflop_memory)
 
         info = self.evaluator.evaluate(state.hole, state.board)
         tex = self.evaluator.texture(state.board)
