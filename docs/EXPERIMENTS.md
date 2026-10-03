@@ -56,6 +56,8 @@ stations table (`house:call`, maniac) usually doesn't help on the ladder.
 
 | Idea | Result |
 |---|---|
+| Bigger river value bets (fold model capped at pot size + 2x-pot river size) | 40 seeds: tight 19/40 (-135), 5-seat 16/40 (-208), stations 14/40 (-1030) |
+| Bluff the river more (review suggestion) | Ladder data: real river bluffs (bettor behind) lose at every size, -5 to -40 chips per bluff; callers fold only 26-40% when ahead. Our own bluffs are rare (14 in 42 games) and about break-even |
 | Commit guard only at 7+ seats (for 5-seat tournament tables) | 5 seats vs Jake: 4/10 both before and after, within noise. No gain |
 | Fold one pair to every big river bet | Tight table 3/10 (-187); ladder replay +11. Jake's margin already covers it |
 | Smaller bet sizes everywhere (copying the MAC bot's 1/3-pot bets) | Tight table 4/10 (+30), more variance |
@@ -71,6 +73,17 @@ stations table (`house:call`, maniac) usually doesn't help on the ladder.
 v3.5 at 5 seats (`--table tight5` / `mix5`): even with v3.1 (6/10 -80, 5/10
 +472) and with Jake's build (4/10 -402, 4/10 +191), all inside screen noise.
 Nothing tuned for the 8-seat ladder measurably hurts at 5 seats.
+
+## Red-team checks (v3.5)
+
+- **Overbet-bluffing us on the river:** 45 ladder games, only 9 big heads-up
+  river bets into us; we folded the best hand once (-87). Not being exploited.
+- **Odd sizes / crash probing:** `opponents/fuzzer.py` (min-raises, odd
+  sizes, random jams) at 2, 5 and 8 seats: all OK, zero fallbacks.
+- **Timing tells:** the protocol and replays carry no timestamps.
+- **Cross-game profiling:** impossible, every game is a fresh process.
+- Theoretical only (field is static): adaptive "teach then punish" against
+  Jake's undecayed per-opponent stats, and bet-size tells (big bet = strong).
 
 ## Open leads
 
