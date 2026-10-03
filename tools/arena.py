@@ -50,6 +50,9 @@ def factory(spec):
             from variants import VARIANTS
             for key, val in VARIANTS[spec[3:]].items():
                 mod, attr = key.split(".")
+                if val == "BUCKETS":  # route the flop to the old bucket model
+                    import flop_buckets
+                    val = flop_buckets.decide
                 setattr({"flop": flop, "range_model": range_model}[mod], attr, val)
         if spec == "me_v0":  # baseline: flop uses the shared default policy
             import flop, strategy

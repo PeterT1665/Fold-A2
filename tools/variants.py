@@ -12,3 +12,6 @@ VARIANTS = {
 VARIANTS["tol08"] = {"flop.SIZE_TOL": 0.08}
 VARIANTS["tol15"] = {"flop.SIZE_TOL": 0.15}
 VARIANTS["tol30"] = {"flop.SIZE_TOL": 0.30}
+VARIANTS["v1buckets"] = {"flop.decide": "BUCKETS"}
+VARIANTS["scale_off"] = {"flop.BET_SCALE": (1.0,) * 6}
+VARIANTS["scale_mild"] = {"flop.BET_SCALE": (1.0, 1.0, 0.9, 1.0, 0.7, 0.5)}
