@@ -56,6 +56,9 @@ stations table (`house:call`, maniac) usually doesn't help on the ladder.
 
 | Idea | Result |
 |---|---|
+| Open to 3bb instead of 2.5bb (pro-player feedback) | 40 seeds: tight 16/40 (-164), 5-seat 16/40 (-289). Ladder data "3bb opens earn +0.8" compares different bots, not the same bot |
+| Wider BB defence vs opens <= 3bb (ladder wide defenders earn +3-4/spot) | 40 seeds: tight 17/40 (-127), 5-seat 17/40 (-259). Those bots win postflop with aggression we don't have |
+| Both of the above | tight 16/40 (-161), 5-seat 18/40 (-285) |
 | Bigger river value bets (fold model capped at pot size + 2x-pot river size) | 40 seeds: tight 19/40 (-135), 5-seat 16/40 (-208), stations 14/40 (-1030) |
 | Bluff the river more (review suggestion) | Ladder data: real river bluffs (bettor behind) lose at every size, -5 to -40 chips per bluff; callers fold only 26-40% when ahead. Our own bluffs are rare (14 in 42 games) and about break-even |
 | Commit guard only at 7+ seats (for 5-seat tournament tables) | 5 seats vs Jake: 4/10 both before and after, within noise. No gain |
