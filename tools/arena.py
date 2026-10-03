@@ -26,7 +26,8 @@ def load(path, tag):
     sys.path.insert(0, os.path.dirname(path))
     spec.loader.exec_module(mod)
     subs = [v for v in vars(mod).values() if isinstance(v, type) and issubclass(v, Bot) and v is not Bot]
-    return subs[0]
+    own = [v for v in subs if v.__module__ == mod.__name__]  # skip imported base classes
+    return (own or subs)[0]
 
 
 _factories = {}
