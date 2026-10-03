@@ -144,6 +144,18 @@ def _ranges(state, ctx, opps, ip_of):
     return rm.replay(state, ctx, opps, ip_of, init, ("flop", "turn", "river"), draw_hit=DRAW_HIT)
 
 
+
+COMMIT_FRAC = 0.5  # a bet/raise putting in more than this share of our stack is a commitment
+
+
+def can_commit(state) -> bool:
+    """Only stack off with a made hand that holds up whether or not they bluff:
+    trips or better that improves on the board, or two pair on an unpaired
+    board. Draws and one pair never commit on the turn or river."""
+    hole, board = parse(state.hole), parse(state.board)
+    mine, base = rank7(hole + board) >> 20, rank7(board) >> 20
+    return mine > base and (mine >= 3 or (mine == 2 and base == 0))
+
 def _weights(w, combos):
     """Weight each combo by its bucket's likelihood ratio `w[b]`. The prior is
     uniform over the combos the board allows, so a bucket's share of the range
@@ -222,6 +234,11 @@ def _decide(state, ctx):
     def commit(a):
         return stack if stack - a < 0.4 * (P + 2 * a) else a
 
+    # with chips behind relative to the pot, big commitments need a robust hand
+    # (not vs calling stations: they pay off big bets with worse hands)
+    vs_station = any(cls[s] is OC.CALLING_STATION for s in opps)
+    guarded = stack > 0.5 * P and not vs_station and not can_commit(state)
+
     no_bluff = len(opps) > 1 or any(cls[s] in (OC.CALLING_STATION, OC.OVER_AGGRESSIVE) for s in opps)
 
     # ------------------------------------------------------------ no bet to face
@@ -234,6 +251,8 @@ def _decide(state, ctx):
         best_ev, best_a, best_eq = eq_r * P, 0, eq_r
         for frac in BET_SIZES + (None,):
             a = stack if frac is None else commit(min(frac * P, stack))
+            if guarded and a > COMMIT_FRAC * stack:
+                continue
             f, eq_c = called(a)
             if a > P and eq_c < OVERBET_EQ:
                 continue
@@ -251,7 +270,9 @@ def _decide(state, ctx):
 
     # ------------------------------------------------------------ facing a bet
     big = c / max(P - c, 1) > BIG_BET
-    ev_call = eq_r * (P + c) - c - (BIG_CALL_MARGIN * (P + c) if big else 0.0)
+    # two pair or better that improves on the board is a bluff-catcher worth paying
+    strong = (my_score >> 20) >= 2 and (my_score >> 20) > (rank7(parse(state.board)) >> 20)
+    ev_call = eq_r * (P + c) - c - (BIG_CALL_MARGIN * (P + c) if big and not strong else 0.0)
     best, best_ev, best_x = "fold", 0.0, 0
     if ev_call > best_ev:
         best, best_ev = "call", ev_call
@@ -264,6 +285,8 @@ def _decide(state, ctx):
             a = x - mine
             if stack - a < 0.4 * (P + 2 * a):
                 x, a = state.max_raise_to, stack
+            if guarded and a > COMMIT_FRAC * stack:
+                continue
             f, eq_c = called(a)
             if eq_c < VALUE_EQ:
                 continue  # no river bluff-raises

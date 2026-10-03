@@ -20,7 +20,7 @@ import time
 import range_model as rm
 from opponent_tracker import OpponentClass as OC
 from postflop_evaluator import RANKS, SUITS, parse
-from river import _DECK, _weights, rank7
+from river import COMMIT_FRAC, can_commit, _DECK, _weights, rank7
 from strategy import default_postflop
 
 # tunable knobs
@@ -156,6 +156,11 @@ def _decide(state, ctx):
     def commit(a):
         return stack if stack - a < 0.4 * (P + 2 * a) else a
 
+    # with chips behind relative to the pot, big commitments need a robust hand
+    # (not vs calling stations: they pay off big bets with worse hands)
+    vs_station = any(cls[s] is OC.CALLING_STATION for s in opps)
+    guarded = stack > 0.5 * P and not vs_station and not can_commit(state)
+
     drawing = my_b in (rm.SDR, rm.WDR)
     no_bluff = len(opps) > 1 or any(cls[s] in (OC.CALLING_STATION, OC.OVER_AGGRESSIVE) for s in opps)
 
@@ -169,6 +174,8 @@ def _decide(state, ctx):
         best_ev, best_a, best_eq = R * eq_r * P, 0, eq_r
         for frac in BET_SIZES + (None,):
             a = stack if frac is None else commit(min(frac * P, stack))
+            if guarded and a > COMMIT_FRAC * stack:
+                continue
             f, eq_c = called(a)
             if frac is None and eq_c < 0.6:
                 continue  # jam only for value
@@ -186,7 +193,8 @@ def _decide(state, ctx):
 
     # ------------------------------------------------------------ facing a bet
     big = c / max(P - c, 1) > BIG_BET
-    ev_call = R * eq_r * (P + c) - c - (BIG_CALL_MARGIN * (P + c) if big else 0.0)
+    strong = my_b in (rm.NUT, rm.STR)  # don't fold strong made hands to bluffs
+    ev_call = R * eq_r * (P + c) - c - (BIG_CALL_MARGIN * (P + c) if big and not strong else 0.0)
     best, best_ev, best_x = "fold", 0.0, 0
     if ev_call > best_ev:
         best, best_ev = "call", ev_call
@@ -199,6 +207,8 @@ def _decide(state, ctx):
             a = x - mine
             if stack - a < 0.4 * (P + 2 * a):
                 x, a = state.max_raise_to, stack
+            if guarded and a > COMMIT_FRAC * stack:
+                continue
             f, eq_c = called(a)
             if eq_c < (SEMI_EQ if (drawing and len(opps) == 1) else VALUE_EQ):
                 continue
