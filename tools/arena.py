@@ -2,7 +2,7 @@
 
   python tools/arena.py me,tag,lag,equity,nit --deals 300 --seeds 4
 
-Specs: `me` (macpoker-scaffold/main.py), an opponents/<name>.py basename, or house:<name>.
+Specs: `me` (macpoker-scaffold/main.py), `me_v0` (same, flop = shared default policy), an opponents/<name>.py basename, or house:<name>.
 Prints average placement points, mean chips/game and win% per bot.
 """
 import argparse, importlib.util, os, sys
@@ -37,12 +37,16 @@ def factory(spec):
     if spec.startswith("house:"):
         f = lambda: resolve_bot(spec)
     else:
-        path = (os.path.join(ROOT, "macpoker-scaffold", "main.py") if spec == "me"
+        is_me = spec in ("me", "me_v0")
+        path = (os.path.join(ROOT, "macpoker-scaffold", "main.py") if is_me
                 else os.path.join(ROOT, "opponents", spec + ".py"))
-        if spec == "me":
+        if is_me:
             sys.path.insert(0, os.path.join(ROOT, "macpoker-scaffold"))
         cls = load(path, "bot_" + spec)
         f = cls
+        if spec == "me_v0":  # baseline: flop uses the shared default policy
+            import flop, strategy
+            flop.decide = strategy.default_postflop
     _factories[spec] = f
     return f
 
