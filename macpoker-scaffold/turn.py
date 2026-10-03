@@ -20,7 +20,7 @@ import time
 import range_model as rm
 from opponent_tracker import OpponentClass as OC
 from postflop_evaluator import RANKS, SUITS, parse
-from river import _DECK, _weights, rank7
+from river import BARREL_MARGIN, _DECK, _weights, barrels, rank7
 from strategy import default_postflop
 
 # tunable knobs
@@ -221,7 +221,7 @@ def _decide(state, ctx):
         return state.raise_to(int(max(state.min_raise_to, min(mine + round(best_a), state.max_raise_to))))
 
     # ------------------------------------------------------------ facing a bet
-    ev_call = R * eq_r * (P + c) - c
+    ev_call = R * eq_r * (P + c) - c - BARREL_MARGIN * barrels(state) * (P + c)
     best, best_ev, best_x = "fold", 0.0, 0
     if ev_call > best_ev:
         best, best_ev = "call", ev_call
