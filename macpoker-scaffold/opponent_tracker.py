@@ -6,6 +6,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from postflop_evaluator import HandClass, PostFlopEvaluator
+
+_EV = PostFlopEvaluator()
+
 MIN_HANDS = 10
 
 
@@ -34,6 +38,8 @@ class PlayerStats:
     cbet_folds: int = 0
     showdowns: int = 0
     bet_frac_sum: float = 0.0
+    big_sd: int = 0  # big postflop bets (>= 70% pot) seen at showdown
+    big_sd_weak: int = 0  # ... where the final hand was medium or worse
 
     # ---- derived (small Bayesian prior so early reads are not extreme) ----
     @staticmethod
@@ -91,7 +97,8 @@ class OpponentTracker:
         return st
 
     # ------------------------------------------------------------ observe
-    def observe_hand(self, events: list[dict], players: list[int], showdown_seats=()):
+    def observe_hand(self, events: list[dict], players: list[int], showdown_seats=(),
+                     revealed=None, board=None):
         """Digest one finished hand. `events` are the SDK 'action' messages in
         order (street, seat, action, amount[, pot]); raise amounts are raise-to."""
         n = len(players)
@@ -105,6 +112,7 @@ class OpponentTracker:
         vpip: set[int] = set()
         pfr: set[int] = set()
         cbet_open = False
+        big_bettors: set[int] = set()
 
         for ev in events:
             s = ev["seat"]
@@ -141,6 +149,8 @@ class OpponentTracker:
                     if cur == 0:
                         st.post_bets += 1
                         st.bet_frac_sum += (amt - street_bet[s]) / max(pot, 1)
+                        if (amt - street_bet[s]) >= 0.7 * max(pot, 1):
+                            big_bettors.add(s)
                         if street == "flop" and s == pf_raiser:
                             cbet_open = True
                     else:
@@ -164,6 +174,14 @@ class OpponentTracker:
         for s in showdown_seats:
             if 0 <= s < n:
                 self.get(players[s]).showdowns += 1
+        # did their big bets turn out strong? (hand strength only, shown at showdown)
+        if revealed and board and len(board) == 5:
+            for s in big_bettors:
+                hole = revealed.get(str(s)) or revealed.get(s)
+                if hole:
+                    st = self.get(players[s])
+                    st.big_sd += 1
+                    st.big_sd_weak += _EV.evaluate(hole, board).hc <= HandClass.MEDIUM_MADE
 
     # ------------------------------------------------------------ classify
     def classify(self, player: int) -> OpponentClass:

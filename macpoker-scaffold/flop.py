@@ -31,42 +31,12 @@ RAISE_MARGIN = 0.06
 
 def _lines(state):
     """Each opponent's preflop line: open / 3bet / call / base."""
-    raises, out = 0, {}
-    for st, s, k, _ in state.history:
-        if st != "preflop":
-            continue
-        if k == "raise":
-            out[s] = "3bet" if raises >= 1 else "open"
-            raises += 1
-        elif k == "call" and s not in out:
-            out[s] = "call"
-    return out, raises
-
+    return rm.preflop_lines(state.history)
 
 def _ranges(state, ctx, opps, tex, order, ip_of):
-    lines, _ = _lines(state)
-    cls = {s: ctx.tracker.classify(state.player_at(s)) for s in opps}
-    ranges = {s: rm.prior(tex, lines.get(s, "base")) for s in opps}
-    pot = state.pot - sum(state.street_bets)
-    sb, cur = {}, 0
-    for st, s, k, a in state.history:
-        if st != "flop":
-            continue
-        kind, frac = None, 0.0
-        if k == "raise":
-            added = a - sb.get(s, 0)
-            kind, frac = ("bet" if cur == 0 else "raise"), added / max(pot, 1)
-            pot += added
-            sb[s], cur = a, a
-        elif k == "call":
-            kind, frac = "call", a / max(pot - a, 1)
-            pot += a
-            sb[s] = sb.get(s, 0) + a
-        elif k == "check":
-            kind = "check"
-        if kind and s in ranges:
-            ranges[s] = rm.update(ranges[s], kind, frac, ip_of(s), cls[s])
-    return ranges, cls
+    lines, _ = rm.preflop_lines(state.history)
+    init = {s: rm.prior(tex, lines.get(s, "base")) for s in opps}
+    return rm.replay(state, ctx, opps, ip_of, init, ("flop",), call_frac="pot_before")
 
 
 def decide(state, ctx):
@@ -88,13 +58,13 @@ def decide(state, ctx):
     tex = ctx.evaluator.texture(state.board)
     my_b = rm.HC2B[info.hc]
     ranges, cls = _ranges(state, ctx, opps, tex, order, ip_of)
+    pstats = {s: ctx.tracker.get(state.player_at(s)) for s in opps}
 
     P = state.pot
     stack = state.my_stack
     mine = state.street_bets[me]
     c = state.to_call
     rng = ctx.rng
-    _, pre_raises = _lines(state)
     pfr = any(st == "preflop" and k == "raise" and s == me for st, s, k, _ in state.history)
     R = 1.0 if ip else 0.92
     if info.hc is HC.MEDIUM_MADE and stack / max(P, 1) > 10:
@@ -108,7 +78,7 @@ def decide(state, ctx):
         """(P(all fold), equity if called) for putting in `a` chips."""
         f, eq = 1.0, 1.0
         for s in opps:
-            cr, pf = rm.call_range(ranges[s], rm.fold_probs(size, cls[s]))
+            cr, pf = rm.call_range(ranges[s], rm.fold_probs(size, cls[s], pstats[s]))
             f *= pf
             eq *= rm.equity(my_b, info.eq, cr)
         return f, eq

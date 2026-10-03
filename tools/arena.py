@@ -26,7 +26,8 @@ def load(path, tag):
     sys.path.insert(0, os.path.dirname(path))
     spec.loader.exec_module(mod)
     subs = [v for v in vars(mod).values() if isinstance(v, type) and issubclass(v, Bot) and v is not Bot]
-    return subs[0]
+    own = [v for v in subs if v.__module__ == mod.__name__]  # skip imported base classes
+    return (own or subs)[0]
 
 
 _factories = {}
@@ -50,7 +51,12 @@ def factory(spec):
             from variants import VARIANTS
             for key, val in VARIANTS[spec[3:]].items():
                 mod, attr = key.split(".")
-                setattr({"flop": flop, "range_model": range_model}[mod], attr, val)
+                if isinstance(val, str) and val.startswith("EXP:"):  # tools/experiments.py patch
+                    import experiments
+                    val = experiments.build(val[4:])
+                import preflop
+                tgt = {"flop": flop, "range_model": range_model, "preflop": preflop}[mod]
+                setattr(tgt, attr, val)
         if spec == "me_v0":  # baseline: flop uses the shared default policy
             import flop, strategy
             flop.decide = strategy.default_postflop

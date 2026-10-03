@@ -12,3 +12,12 @@ VARIANTS = {
 VARIANTS["tol08"] = {"flop.SIZE_TOL": 0.08}
 VARIANTS["tol15"] = {"flop.SIZE_TOL": 0.15}
 VARIANTS["tol30"] = {"flop.SIZE_TOL": 0.30}
+
+# --- flop aggression (these two knobs exist in v3.1 flop.py); on a ladder-like table every
+# variant tied with the baseline within noise (5.47-5.53 pts vs 5.52)
+VARIANTS["aggr_p"] = {"flop.BLUFF_BET_P": (0.8, 0.6, 0.45), "flop.BET_MARGIN": 0.0}
+
+# --- preflop what-ifs (experiment only; preflop belongs to Jake)
+VARIANTS["wide6"] = {"preflop.decide": "EXP:wide_open_6"}
+VARIANTS["wide5"] = {"preflop.decide": "EXP:wide_open_5"}
+VARIANTS["wide4"] = {"preflop.decide": "EXP:wide_open_4"}
