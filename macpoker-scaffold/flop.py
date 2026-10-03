@@ -27,7 +27,7 @@ BLUFF_MULTIWAY = 0.4  # multiplier when 2+ opponents
 BLUFF_RAISE_P = 0.3
 BET_MARGIN = 0.02  # EV edge (x pot) a bet needs over checking
 RAISE_MARGIN = 0.06
-SIZE_TOL = 0.15  # pick randomly among bet sizes within SIZE_TOL x pot of the best EV (hides hand strength)
+SIZE_TOL = 0.0  # 0 = always best EV (0.15 lost 7/10 seeds, -906); >0 picks randomly among bet sizes within SIZE_TOL x pot of the best EV (hides hand strength)
 
 
 def _lines(state):
