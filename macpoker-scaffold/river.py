@@ -143,8 +143,9 @@ def _ranges(state, ctx, opps, ip_of):
             elif k == "call" and s not in lines:
                 lines[s] = "call"
     cls = {s: ctx.tracker.classify(state.player_at(s)) for s in opps}
-    tex = ctx.evaluator.texture(state.board[:3])
-    ranges = {s: rm.prior(tex, lines.get(s, "base")) for s in opps}
+    # likelihood ratios per bucket: start flat (tilted by the preflop line) and let
+    # the actions reweight; _weights then multiplies by the board's real combo counts
+    ranges = {s: rm.normalize(list(rm._LINE[lines.get(s, "base")])) for s in opps}
 
     # chips added per street, to recover the pot at the start of each street
     added = {"flop": 0, "turn": 0}
@@ -195,12 +196,11 @@ def _ranges(state, ctx, opps, ip_of):
 
 
 def _weights(w, combos):
-    """Spread each bucket's mass evenly over the combos in that bucket."""
-    n = [0] * 6
-    for _, b in combos:
-        n[b] += 1
-    per = [w[b] / n[b] if n[b] else 0.0 for b in range(6)]
-    cw = [per[b] for _, b in combos]
+    """Weight each combo by its bucket's likelihood ratio `w[b]`. The prior is
+    uniform over the combos the board allows, so a bucket's share of the range
+    grows with how many combos the board puts in it (e.g. flushes on a
+    four-flush board) instead of being a fixed guess."""
+    cw = [w[b] for _, b in combos]
     tot = sum(cw)
     return [x / tot for x in cw] if tot > 0 else [1.0 / len(combos)] * len(combos)
 
