@@ -98,7 +98,8 @@ class MyBot(Bot):
     def act(self, state):
         try:
             return self._act(state)
-        except Exception:
+        except Exception as e:
+            print(f"act fallback (hand {getattr(state, 'hand', '?')}, {getattr(state, 'street', '?')}): {e!r}")
             return self._safe(state)
 
     @staticmethod
