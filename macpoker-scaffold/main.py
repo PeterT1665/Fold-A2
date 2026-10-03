@@ -81,8 +81,10 @@ class MyBot(Bot):
     def on_hand_end(self, info):
         try:
             if self._players:
-                showdown = [int(s) for s in (info.get("revealed") or {})]
-                self.tracker.observe_hand(self._events, self._players, showdown)
+                revealed = info.get("revealed") or {}
+                showdown = [int(s) for s in revealed]
+                self.tracker.observe_hand(self._events, self._players, showdown,
+                                          revealed, info.get("board"))
         except Exception as e:
             print(f"tracker error: {e!r}")
         try:

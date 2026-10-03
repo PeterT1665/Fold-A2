@@ -46,6 +46,7 @@ def _lines(state):
 def _ranges(state, ctx, opps, tex, order, ip_of):
     lines, _ = _lines(state)
     cls = {s: ctx.tracker.classify(state.player_at(s)) for s in opps}
+    pstats = {s: ctx.tracker.get(state.player_at(s)) for s in opps}
     ranges = {s: rm.prior(tex, lines.get(s, "base")) for s in opps}
     pot = state.pot - sum(state.street_bets)
     sb, cur = {}, 0
@@ -65,7 +66,7 @@ def _ranges(state, ctx, opps, tex, order, ip_of):
         elif k == "check":
             kind = "check"
         if kind and s in ranges:
-            ranges[s] = rm.update(ranges[s], kind, frac, ip_of(s), cls[s])
+            ranges[s] = rm.update(ranges[s], kind, frac, ip_of(s), cls[s], pstats[s])
     return ranges, cls
 
 
@@ -88,6 +89,7 @@ def decide(state, ctx):
     tex = ctx.evaluator.texture(state.board)
     my_b = rm.HC2B[info.hc]
     ranges, cls = _ranges(state, ctx, opps, tex, order, ip_of)
+    pstats = {s: ctx.tracker.get(state.player_at(s)) for s in opps}
 
     P = state.pot
     stack = state.my_stack
@@ -108,7 +110,7 @@ def decide(state, ctx):
         """(P(all fold), equity if called) for putting in `a` chips."""
         f, eq = 1.0, 1.0
         for s in opps:
-            cr, pf = rm.call_range(ranges[s], rm.fold_probs(size, cls[s]))
+            cr, pf = rm.call_range(ranges[s], rm.fold_probs(size, cls[s], pstats[s]))
             f *= pf
             eq *= rm.equity(my_b, info.eq, cr)
         return f, eq

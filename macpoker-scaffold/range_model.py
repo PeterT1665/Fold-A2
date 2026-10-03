@@ -64,15 +64,58 @@ _L_BET = {
     "m": [.8, .8, .4, .6, .25, .25],
     "l": [.9, .6, .15, .45, .15, .2],
 }
+# Medium/large bets from a player who bets selectively: ladder replays showed
+# these are nearly always real (calling them lost ~58 chips per call).
+_L_BET_TRUST = {
+    "m": [.8, .8, .3, .6, .12, .10],
+    "l": [.9, .6, .08, .45, .06, .06],
+}
 _L_RAISE = [.9, .35, .05, .3, .08, .1]
+
+# --- per-opponent adaptation (shrunk toward a typical player, like preflop) --
+ADAPT_TRUST = True  # trust a player's big bets by how often they bet
+ADAPT_FOLD = True  # scale fold model by the player's own fold-to-bet rate
+PRIOR_K = 8.0
+BET_FREQ_PRIOR = 0.5
+TRUST_LO, TRUST_HI = 0.65, 0.90  # bet freq: <= LO fully trusted, >= HI old model
+FOLD_PRIOR = 0.45
+ADAPT_SD = False  # stop trusting big bets from players caught bluffing at showdown
+SD_K, SD_PRIOR = 4.0, 0.25
+SD_LO, SD_HI = 0.20, 0.40  # shrunk weak share of shown big bets: <= LO trust, >= HI old model
+
+
+def bet_freq(st) -> float:
+    """How often this player bets when checked to (postflop), shrunk."""
+    n = st.post_bets + st.post_checks
+    return (st.post_bets + PRIOR_K * BET_FREQ_PRIOR) / (n + PRIOR_K)
+
+
+def fold_rate(st) -> float:
+    """How often this player folds facing a postflop bet, shrunk."""
+    return (st.facing_folds + PRIOR_K * FOLD_PRIOR) / (st.facing + PRIOR_K)
+
+
+def bluff_share(st) -> float:
+    """Share of this player's big bets that were weak when shown down, shrunk."""
+    return (st.big_sd_weak + SD_K * SD_PRIOR) / (st.big_sd + SD_K)
+
+
+def _blend(a, b, w):
+    return [x * (1 - w) + y * w for x, y in zip(a, b)]
 _L_CALL = [.7, .9, .75, .85, .35, .08]
 _L_CHECK_IP = [.25, .45, .8, .55, .7, .85]
 _L_CHECK_OOP = [.5, .6, .85, .6, .85, .9]
 
 
-def _lik(kind: str, frac: float, ip: bool):
+def _lik(kind: str, frac: float, ip: bool, st=None):
     if kind == "bet":
-        return _L_BET["s" if frac <= 0.4 else ("m" if frac <= 0.85 else "l")]
+        sz = "s" if frac <= 0.4 else ("m" if frac <= 0.85 else "l")
+        if sz == "s" or st is None or not ADAPT_TRUST:
+            return _L_BET[sz]
+        w = min(1.0, max(0.0, (bet_freq(st) - TRUST_LO) / (TRUST_HI - TRUST_LO)))
+        if ADAPT_SD:
+            w = max(w, min(1.0, max(0.0, (bluff_share(st) - SD_LO) / (SD_HI - SD_LO))))
+        return _blend(_L_BET_TRUST[sz], _L_BET[sz], w)
     if kind == "raise":
         return _L_RAISE
     if kind == "call":
@@ -92,8 +135,8 @@ _K = {  # exponent applied to the likelihood: <1 flattens (action says less), >1
 }
 
 
-def update(w, kind: str, frac: float, ip: bool, cls: OC):
-    l = _lik(kind, frac, ip)
+def update(w, kind: str, frac: float, ip: bool, cls: OC, st=None):
+    l = _lik(kind, frac, ip, st)
     k = _K[cls][kind]
     return normalize([x * (p ** k) for x, p in zip(w, l)])
 
@@ -104,18 +147,22 @@ _FOLD0 = [.02, .12, .45, .25, .70, .90]
 _FOLDK = [.05, .30, .70, .45, .40, .15]
 
 
-def fold_probs(size: float, cls: OC):
+def fold_probs(size: float, cls: OC, st=None):
     """P(fold | bucket) facing a bet/raise of `size` x pot."""
+    # this player's own fold tendency vs a typical player (1.0 with no data)
+    adj = fold_rate(st) / FOLD_PRIOR if (st is not None and ADAPT_FOLD) else 1.0
+    adj = min(1.6, max(0.5, adj))
     out = []
     for b in range(6):
         f = min(.98, max(0.0, _FOLD0[b] + _FOLDK[b] * (size - 0.5)))
-        if cls is OC.TIGHT_FOLD:
+        per_player = st is not None and ADAPT_FOLD  # these two labels come from fold stats
+        if cls is OC.TIGHT_FOLD and not per_player:
             f += (1 - f) * 0.35
-        elif cls is OC.CALLING_STATION:
+        elif cls is OC.CALLING_STATION and not per_player:
             f *= 0.45
         elif cls is OC.OVER_AGGRESSIVE:
             f *= 0.7
-        out.append(f * FOLD_SCALE)
+        out.append(min(.98, f * adj) * FOLD_SCALE)
     return out
 
 

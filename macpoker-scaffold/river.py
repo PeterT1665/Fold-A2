@@ -143,6 +143,7 @@ def _ranges(state, ctx, opps, ip_of):
             elif k == "call" and s not in lines:
                 lines[s] = "call"
     cls = {s: ctx.tracker.classify(state.player_at(s)) for s in opps}
+    pstats = {s: ctx.tracker.get(state.player_at(s)) for s in opps}
     # likelihood ratios per bucket: start flat (tilted by the preflop line) and let
     # the actions reweight; _weights then multiplies by the board's real combo counts
     ranges = {s: rm.normalize(list(rm._LINE[lines.get(s, "base")])) for s in opps}
@@ -191,7 +192,7 @@ def _ranges(state, ctx, opps, ip_of):
             elif k == "check":
                 kind = "check"
             if kind and s in ranges:
-                ranges[s] = rm.update(ranges[s], kind, frac, ip_of(s), cls[s])
+                ranges[s] = rm.update(ranges[s], kind, frac, ip_of(s), cls[s], pstats[s])
     return ranges, cls
 
 
@@ -245,6 +246,7 @@ def _decide(state, ctx):
 
     my_score, combos = _combos(state, ctx)
     ranges, cls = _ranges(state, ctx, opps, ip_of)
+    pstats = {s: ctx.tracker.get(state.player_at(s)) for s in opps}
     cws = {s: _weights(ranges[s], combos) for s in opps}
 
     P, c = state.pot, state.to_call
@@ -264,7 +266,7 @@ def _decide(state, ctx):
                 pf, e = _equity(my_score, combos, cws[s])
                 pf = 0.0
             else:
-                pf, e = _equity(my_score, combos, cws[s], rm.fold_probs(size, cls[s]))
+                pf, e = _equity(my_score, combos, cws[s], rm.fold_probs(size, cls[s], pstats[s]))
             f *= pf
             eq *= e
         return f, eq
