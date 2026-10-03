@@ -31,6 +31,7 @@ OVERBET_EQ = 0.70  # equity-when-called needed to bet more than pot
 # where unresolved draws from flop/turn end up on the river: (hit bucket, share)
 DRAW_HIT = {rm.SDR: (rm.STR, 0.30), rm.WDR: (rm.MED, 0.15)}
 MIN_CLOCK_MS = 2000  # below this, use the cheap shared policy
+BARREL_MARGIN = 0.03  # extra equity needed to call, per street a live opponent bet
 
 _DECK = [(i, j) for i in range(len(RANKS)) for j in range(len(SUITS))]
 _cache: dict = {}
@@ -195,6 +196,14 @@ def _ranges(state, ctx, opps, ip_of):
     return ranges, cls
 
 
+def barrels(state) -> int:
+    """Postflop streets on which an opponent still in the hand bet or raised.
+    Ladder bots that keep firing are mostly value, so calls get stricter."""
+    me = state.seat
+    return len({st for st, s, k, _ in state.history
+                if st != "preflop" and k == "raise" and s != me and not state.folded[s]})
+
+
 def _weights(w, combos):
     """Weight each combo by its bucket's likelihood ratio `w[b]`. The prior is
     uniform over the combos the board allows, so a bucket's share of the range
@@ -300,7 +309,7 @@ def _decide(state, ctx):
         return state.raise_to(int(max(state.min_raise_to, min(mine + round(best_a), state.max_raise_to))))
 
     # ------------------------------------------------------------ facing a bet
-    ev_call = eq_r * (P + c) - c
+    ev_call = eq_r * (P + c) - c - BARREL_MARGIN * barrels(state) * (P + c)
     best, best_ev, best_x = "fold", 0.0, 0
     if ev_call > best_ev:
         best, best_ev = "call", ev_call

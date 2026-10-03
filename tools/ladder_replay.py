@@ -76,9 +76,9 @@ def replay(bot_path: str, me: int, game: dict, verbose: bool = False):
                     diverged = True
                     d = h["deltas_by_bot"][me]
                     gain = 0
-                    if kind == "fold" and real in ("call", "raise") and d < 0:
-                        gain = d + contrib[seat]  # negative d, we keep what was not yet in
-                        gain = -gain
+                    if kind == "fold" and real in ("call", "raise"):
+                        # folding here ends the hand for us at -contrib: exact, win or lose
+                        gain = -contrib[seat] - d
                         saved += gain
                     rows.append((h["hand"], street, real, ev["amount"], kind, amt, d, gain,
                                  "".join(h["holes"][str(seat)]), " ".join(board)))
@@ -113,4 +113,4 @@ if __name__ == "__main__":
                   f"  hand_result={r[6]:+} saved={r[7]:+}  {r[8]} | {r[9]}")
     agree = total["same"] / max(1, sum(total.values()))
     print(f"decisions matching the ladder: {total['same']}/{sum(total.values())} ({agree:.0%}); "
-          f"chips saved by folds that differ: {total_saved:+}")
+          f"net chips from folds that differ: {total_saved:+}")

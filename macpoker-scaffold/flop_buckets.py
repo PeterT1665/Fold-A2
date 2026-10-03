@@ -44,10 +44,34 @@ def _lines(state):
     return out, raises
 
 
+_counts_cache: dict = {}
+
+
+def _bucket_counts(state, ctx):
+    """How many opponent combos this flop puts in each bucket (cached per hand)."""
+    key = (tuple(state.hole), tuple(state.board))
+    hit = _counts_cache.get(key)
+    if hit is not None:
+        return hit
+    from river import _DECK
+    from postflop_evaluator import RANKS, SUITS, parse
+    used = set(parse(state.hole)) | set(parse(state.board))
+    deck = [RANKS[r] + SUITS[s] for r, s in _DECK if (r, s) not in used]
+    counts = [0] * 6
+    for i in range(len(deck)):
+        for j in range(i + 1, len(deck)):
+            counts[rm.HC2B[ctx.evaluator.evaluate([deck[i], deck[j]], state.board).hc]] += 1
+    _counts_cache.clear()
+    _counts_cache[key] = counts
+    return counts
+
+
 def _ranges(state, ctx, opps, tex, order, ip_of):
     lines, _ = _lines(state)
     cls = {s: ctx.tracker.classify(state.player_at(s)) for s in opps}
-    ranges = {s: rm.prior(tex, lines.get(s, "base")) for s in opps}
+    counts = _bucket_counts(state, ctx)
+    ranges = {s: rm.normalize([c * m for c, m in zip(counts, rm._LINE[lines.get(s, "base")])])
+              for s in opps}
     pot = state.pot - sum(state.street_bets)
     sb, cur = {}, 0
     for st, s, k, a in state.history:
