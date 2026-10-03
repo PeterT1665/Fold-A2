@@ -88,8 +88,8 @@ def _ranges(state, ctx, opps, ip_of):
             elif k == "call" and s not in lines:
                 lines[s] = "call"
     cls = {s: ctx.tracker.classify(state.player_at(s)) for s in opps}
-    tex = ctx.evaluator.texture(state.board[:3])
-    ranges = {s: rm.prior(tex, lines.get(s, "base")) for s in opps}
+    # see river._ranges: flat start tilted by the preflop line, real combo counts via _weights
+    ranges = {s: rm.normalize(list(rm._LINE[lines.get(s, "base")])) for s in opps}
 
     flop_added, sb = 0, {}
     for st, s, k, a in state.history:
