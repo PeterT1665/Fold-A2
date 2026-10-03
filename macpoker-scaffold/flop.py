@@ -27,7 +27,6 @@ BLUFF_MULTIWAY = 0.4  # multiplier when 2+ opponents
 BLUFF_RAISE_P = 0.3
 BET_MARGIN = 0.02  # EV edge (x pot) a bet needs over checking
 RAISE_MARGIN = 0.06
-SIZE_TOL = 0.0  # 0 = always best EV (0.15 lost 7/10 seeds, -906); >0 picks randomly among bet sizes within SIZE_TOL x pot of the best EV (hides hand strength)
 
 
 def _lines(state):
@@ -44,34 +43,10 @@ def _lines(state):
     return out, raises
 
 
-_counts_cache: dict = {}
-
-
-def _bucket_counts(state, ctx):
-    """How many opponent combos this flop puts in each bucket (cached per hand)."""
-    key = (tuple(state.hole), tuple(state.board))
-    hit = _counts_cache.get(key)
-    if hit is not None:
-        return hit
-    from river import _DECK
-    from postflop_evaluator import RANKS, SUITS, parse
-    used = set(parse(state.hole)) | set(parse(state.board))
-    deck = [RANKS[r] + SUITS[s] for r, s in _DECK if (r, s) not in used]
-    counts = [0] * 6
-    for i in range(len(deck)):
-        for j in range(i + 1, len(deck)):
-            counts[rm.HC2B[ctx.evaluator.evaluate([deck[i], deck[j]], state.board).hc]] += 1
-    _counts_cache.clear()
-    _counts_cache[key] = counts
-    return counts
-
-
 def _ranges(state, ctx, opps, tex, order, ip_of):
     lines, _ = _lines(state)
     cls = {s: ctx.tracker.classify(state.player_at(s)) for s in opps}
-    counts = _bucket_counts(state, ctx)
-    ranges = {s: rm.normalize([c * m for c, m in zip(counts, rm._LINE[lines.get(s, "base")])])
-              for s in opps}
+    ranges = {s: rm.prior(tex, lines.get(s, "base")) for s in opps}
     pot = state.pot - sum(state.street_bets)
     sb, cur = {}, 0
     for st, s, k, a in state.history:
@@ -148,21 +123,15 @@ def decide(state, ctx):
         oa_behind = any(cls[s] is OC.OVER_AGGRESSIVE and order(s) > order(me) for s in live)
         if oa_behind and (my_b == rm.NUT or (my_b == rm.STR and info.top_tier)) and rng.random() < 0.7:
             return state.check()  # let the maniac bet, then raise
-        ev_check = R * eq_r * P
-        opts = []
+        best_ev, best_a, best_eq = R * eq_r * P, 0, eq_r
         for frac in BET_SIZES:
             a = commit(min(frac * P, stack))
             f, eq_c = called(a, a / max(P, 1))
             if eq_c < 0.5 and frac > 0.66:
                 continue  # no overbet bluffs / thin overbets
             ev = f * P + (1 - f) * (R * eq_c * (P + 2 * a) - a)
-            if ev > ev_check + BET_MARGIN * P:
-                opts.append((ev, a, eq_c))
-        best_ev, best_a, best_eq = ev_check, 0, eq_r
-        if opts:
-            top = max(o[0] for o in opts)
-            near = [o for o in opts if o[0] >= top - SIZE_TOL * P]
-            best_ev, best_a, best_eq = rng.choice(near)
+            if ev > best_ev + BET_MARGIN * P:
+                best_ev, best_a, best_eq = ev, a, eq_c
         if best_a == 0:
             return state.check()
         if best_eq < 0.42:  # mostly fold equity: gate bluffs
