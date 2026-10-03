@@ -32,6 +32,7 @@ BLUFF_P = 0.3  # how often an EV-positive bet with < 40% equity is fired
 VALUE_EQ = 0.60  # equity-when-called needed for a pure value raise
 SEMI_EQ = 0.30  # a draw needs this much equity-when-called to raise
 OOP_REALISE = 0.92  # share of equity realised when someone acts after us
+MAX_JAM_POT = 1.5  # no jam bigger than this x pot unless a calling station is in: others call only with better
 MIN_CLOCK_MS = 4000  # below this, use the cheap shared policy
 BUDGET_S = 0.35  # stop the exact enumeration early past this (then sample)
 
@@ -189,6 +190,9 @@ def _decide(state, ctx):
             eq *= e
         return f, eq
 
+    # stations call big jams with worse; everyone else only with better
+    vs_station = any(cls[s] is OC.CALLING_STATION for s in opps)
+
     def commit(a):
         return stack if stack - a < 0.4 * (P + 2 * a) else a
 
@@ -205,6 +209,8 @@ def _decide(state, ctx):
         best_ev, best_a, best_eq = R * eq_r * P, 0, eq_r
         for frac in BET_SIZES + (None,):
             a = stack if frac is None else commit(min(frac * P, stack))
+            if frac is None and a > MAX_JAM_POT * P and not vs_station:
+                continue
             f, eq_c = called(a)
             if frac is None and eq_c < 0.6:
                 continue  # jam only for value
@@ -228,6 +234,8 @@ def _decide(state, ctx):
     if state.can_raise and live:
         for frac in RAISE_SIZES + (None,):
             if frac is None:
+                if stack > MAX_JAM_POT * (P + c) and not vs_station:
+                    continue
                 x = state.max_raise_to
             else:
                 x = int(max(state.min_raise_to, min(mine + c + frac * (P + c), state.max_raise_to)))

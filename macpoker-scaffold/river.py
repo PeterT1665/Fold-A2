@@ -30,6 +30,7 @@ VALUE_EQ = 0.60  # equity-when-called needed for a value raise
 OVERBET_EQ = 0.70  # equity-when-called needed to bet more than pot
 # where unresolved draws from flop/turn end up on the river: (hit bucket, share)
 DRAW_HIT = {rm.SDR: (rm.STR, 0.30), rm.WDR: (rm.MED, 0.15)}
+MAX_JAM_POT = 1.5  # no jam bigger than this x pot unless a calling station is in: others call only with better
 MIN_CLOCK_MS = 2000  # below this, use the cheap shared policy
 BARREL_MARGIN = 0.03  # extra equity needed to call, per street a live opponent bet
 
@@ -278,6 +279,9 @@ def _decide(state, ctx):
             eq *= e
         return f, eq
 
+    # stations call big jams with worse; everyone else only with better
+    vs_station = any(cls[s] is OC.CALLING_STATION for s in opps)
+
     def commit(a):
         return stack if stack - a < 0.4 * (P + 2 * a) else a
 
@@ -293,6 +297,8 @@ def _decide(state, ctx):
         best_ev, best_a, best_eq = eq_r * P, 0, eq_r
         for frac in BET_SIZES + (None,):
             a = stack if frac is None else commit(min(frac * P, stack))
+            if frac is None and a > MAX_JAM_POT * P and not vs_station:
+                continue
             f, eq_c = called(a)
             if a > P and eq_c < OVERBET_EQ:
                 continue
@@ -316,6 +322,8 @@ def _decide(state, ctx):
     if state.can_raise and live:
         for frac in RAISE_SIZES + (None,):
             if frac is None:
+                if stack > MAX_JAM_POT * (P + c) and not vs_station:
+                    continue
                 x = state.max_raise_to
             else:
                 x = int(max(state.min_raise_to, min(mine + c + frac * (P + c), state.max_raise_to)))

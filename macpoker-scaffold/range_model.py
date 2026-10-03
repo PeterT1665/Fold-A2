@@ -104,8 +104,12 @@ _FOLD0 = [.02, .12, .45, .25, .70, .90]
 _FOLDK = [.05, .30, .70, .45, .40, .15]
 
 
+MAX_FOLD_SIZE = 1.0  # bets above pot size buy no extra folds (ladder bots call jams with real hands)
+
+
 def fold_probs(size: float, cls: OC):
     """P(fold | bucket) facing a bet/raise of `size` x pot."""
+    size = min(size, MAX_FOLD_SIZE)
     out = []
     for b in range(6):
         f = min(.98, max(0.0, _FOLD0[b] + _FOLDK[b] * (size - 0.5)))
