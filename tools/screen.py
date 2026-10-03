@@ -14,6 +14,8 @@ macpoker-scaffold). Copy the folders first: both sides need their own files.
 Tables:
   stations : house:call, maniac_station, tag, lag, equity_bot, nit
   tight    : tag, lag, equity_bot, nit, shover, tag   (closest to the ladder)
+  tight5   : tag, lag, equity_bot                     (5 seats, tournament size)
+  mix5     : house:call, tag, nit                     (5 seats)
 
 Ship rule we use: B must beat A in about 7/10 seeds with a positive mean on
 the tight table, and not lose clearly on the stations table.
@@ -33,6 +35,9 @@ TABLES = {
                  f"{OPP}/equity_bot.py", f"{OPP}/nit.py"],
     "tight": [f"{OPP}/tag.py", f"{OPP}/lag.py", f"{OPP}/equity_bot.py", f"{OPP}/nit.py",
               f"{OPP}/shover.py", f"{OPP}/tag.py"],
+    # 5 seats, the usual tournament table size
+    "tight5": [f"{OPP}/tag.py", f"{OPP}/lag.py", f"{OPP}/equity_bot.py"],
+    "mix5": ["house:call", f"{OPP}/tag.py", f"{OPP}/nit.py"],
 }
 
 

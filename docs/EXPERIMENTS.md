@@ -18,6 +18,11 @@ ladder games (see [LADDER_DATA.md](LADDER_DATA.md)).
    all verdicts `OK`.
 4. If it doesn't beat `main`, it doesn't ship. Same rule for everyone.
 
+**Screen noise is about ±400 chips per 10 seeds on the tight table.** Two
+builds with identical logic scored 4/10, -437 against each other (the turn's
+time-limited enumeration varies under CPU load). Treat anything inside
+±400 or 4-6/10 as "no difference".
+
 Our local test bots are softer than the ladder. Anything that only wins on the
 stations table (`house:call`, maniac) usually doesn't help on the ladder.
 
@@ -51,6 +56,7 @@ stations table (`house:call`, maniac) usually doesn't help on the ladder.
 
 | Idea | Result |
 |---|---|
+| Commit guard only at 7+ seats (for 5-seat tournament tables) | 5 seats vs Jake: 4/10 both before and after, within noise. No gain |
 | Fold one pair to every big river bet | Tight table 3/10 (-187); ladder replay +11. Jake's margin already covers it |
 | Smaller bet sizes everywhere (copying the MAC bot's 1/3-pot bets) | Tight table 4/10 (+30), more variance |
 | Flop played by the turn's exact-equity engine | 5/10 (-95), and earlier 3/10 |
@@ -59,6 +65,12 @@ stations table (`house:call`, maniac) usually doesn't help on the ladder.
 | Peter's calibrated range tables (`calibrated-ranges`) | Worse than Jake's preflop alone in 6/10 and every arena lineup |
 | Chi's Monte Carlo preflop all-in calls | Lost to Jake's preflop 9/10 |
 | Copying specific bots (MAC bot, jongwon) | MAC's high Elo is variance (swings ~570/game, lost 1182 in one game). Tuning to the current field adds swings when the field changes |
+
+## Tournament table size (5 seats)
+
+v3.5 at 5 seats (`--table tight5` / `mix5`): even with v3.1 (6/10 -80, 5/10
++472) and with Jake's build (4/10 -402, 4/10 +191), all inside screen noise.
+Nothing tuned for the 8-seat ladder measurably hurts at 5 seats.
 
 ## Open leads
 
