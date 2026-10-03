@@ -10,6 +10,7 @@ from collections import defaultdict
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "opponents"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from macpoker import Bot
 from macpoker.cli import resolve_bot
@@ -37,13 +38,19 @@ def factory(spec):
     if spec.startswith("house:"):
         f = lambda: resolve_bot(spec)
     else:
-        is_me = spec in ("me", "me_v0")
+        is_me = spec in ("me", "me_v0") or spec.startswith("me:")
         path = (os.path.join(ROOT, "macpoker-scaffold", "main.py") if is_me
                 else os.path.join(ROOT, "opponents", spec + ".py"))
         if is_me:
             sys.path.insert(0, os.path.join(ROOT, "macpoker-scaffold"))
         cls = load(path, "bot_" + spec)
         f = cls
+        if spec.startswith("me:"):
+            import flop, range_model
+            from variants import VARIANTS
+            for key, val in VARIANTS[spec[3:]].items():
+                mod, attr = key.split(".")
+                setattr({"flop": flop, "range_model": range_model}[mod], attr, val)
         if spec == "me_v0":  # baseline: flop uses the shared default policy
             import flop, strategy
             flop.decide = strategy.default_postflop

@@ -19,8 +19,14 @@ from opponent_tracker import OpponentClass as OC
 from postflop_evaluator import HandClass as HC
 from strategy import default_postflop
 
-BET_SIZES = (0.25, 0.33, 0.5, 0.66, 0.85, 1.0, 1.4)
+# tunable knobs (tools/variants.py overrides these for A/B runs)
+BET_SIZES = (0.25, 0.33, 0.5, 0.66, 0.85, 1.0)
 RAISE_SIZES = (0.66, 1.0, 1.5)
+BLUFF_BET_P = (0.55, 0.4, 0.3)  # bluff-bet freq: pfr in position / pfr out of position / not pfr
+BLUFF_MULTIWAY = 0.4  # multiplier when 2+ opponents
+BLUFF_RAISE_P = 0.3
+BET_MARGIN = 0.02  # EV edge (x pot) a bet needs over checking
+RAISE_MARGIN = 0.06
 
 
 def _lines(state):
@@ -124,12 +130,12 @@ def decide(state, ctx):
             if eq_c < 0.5 and frac > 0.66:
                 continue  # no overbet bluffs / thin overbets
             ev = f * P + (1 - f) * (R * eq_c * (P + 2 * a) - a)
-            if ev > best_ev + 0.02 * P:
+            if ev > best_ev + BET_MARGIN * P:
                 best_ev, best_a, best_eq = ev, a, eq_c
         if best_a == 0:
             return state.check()
         if best_eq < 0.42:  # mostly fold equity: gate bluffs
-            p = (0.55 if (pfr and ip) else 0.4 if pfr else 0.3) * (0.4 if len(opps) > 1 else 1.0)
+            p = (BLUFF_BET_P[0] if (pfr and ip) else BLUFF_BET_P[1] if pfr else BLUFF_BET_P[2]) * (BLUFF_MULTIWAY if len(opps) > 1 else 1.0)
             if rng.random() > p:
                 return state.check()
         if best_a >= stack:
@@ -158,10 +164,10 @@ def decide(state, ctx):
             if strong and eq_c >= 0.65 and ev >= 0.9 * ev_call and ev > best_ev:
                 best, best_ev, best_x, best_eq = "raise", ev, x, eq_c  # build the pot
                 continue
-            if ev > best_ev + 0.06 * P and ev > ev_call + 0.06 * P:
+            if ev > best_ev + RAISE_MARGIN * P and ev > ev_call + RAISE_MARGIN * P:
                 best, best_ev, best_x, best_eq = "raise", ev, x, eq_c
     if best == "raise" and best_eq < 0.45:  # bluff-raise: heads-up, sparingly
-        if len(opps) > 1 or rng.random() > 0.3:
+        if len(opps) > 1 or rng.random() > BLUFF_RAISE_P:
             best = "call" if ev_call > 0 else "fold"
     if best == "raise":
         return state.all_in() if best_x >= state.max_raise_to else state.raise_to(best_x)

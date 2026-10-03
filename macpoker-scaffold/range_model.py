@@ -99,7 +99,7 @@ def update(w, kind: str, frac: float, ip: bool, cls: OC):
 
 
 # --- fold model --------------------------------------------------------------
-FOLD_SCALE = 0.85  # model is optimistic about folds; shade it
+FOLD_SCALE = 0.7  # model is optimistic about folds; shade it (arena-tuned)
 _FOLD0 = [.02, .12, .45, .25, .70, .90]
 _FOLDK = [.05, .30, .70, .45, .40, .15]
 
