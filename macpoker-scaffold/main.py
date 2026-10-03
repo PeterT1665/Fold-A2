@@ -6,7 +6,8 @@ Modules (all in this folder):
   postflop_evaluator  bitmask hand bucketing + board texture
   strategy          action abstraction (CHECK_FOLD / BET_33 / BET_66 / BET_100 /
                     ALL_IN) and the exploitative decision tree
-  preflop           small Chen-score preflop policy
+  preflop / flop / turn / river   one module per street, each exposing
+                    decide(state, ctx) (see CONTRACT.md)
 """
 
 import random
@@ -19,8 +20,16 @@ from macpoker import Bot  # noqa: E402
 
 from opponent_tracker import OpponentTracker  # noqa: E402
 from postflop_evaluator import PostFlopEvaluator  # noqa: E402
-from preflop import preflop_action  # noqa: E402
+import flop, preflop, river, turn  # noqa: E402
 from strategy import PostflopStrategy  # noqa: E402
+
+
+class Ctx:
+    """Shared context handed to every street's decide(state, ctx)."""
+
+    def __init__(self, tracker, rng, blinds, evaluator, strategy):
+        self.tracker, self.rng, self.blinds = tracker, rng, blinds
+        self.evaluator, self.strategy = evaluator, strategy
 
 
 class MyBot(Bot):
@@ -94,17 +103,9 @@ class MyBot(Bot):
                 return state.call()
             return state.fold()
 
-        if not state.board:
-            raiser = None
-            for h in reversed(state.history):
-                if h[0] == "preflop" and h[2] == "raise" and h[1] != state.seat:
-                    raiser = self.tracker.classify(state.player_at(h[1]))
-                    break
-            return preflop_action(state, self.rng, self.blinds[1], raiser)
-
-        info = self.evaluator.evaluate(state.hole, state.board)
-        tex = self.evaluator.texture(state.board)
-        return self.strategy.decide(state, info, tex)
+        ctx = Ctx(self.tracker, self.rng, self.blinds, self.evaluator, self.strategy)
+        street = {0: preflop, 3: flop, 4: turn, 5: river}[len(state.board)]
+        return street.decide(state, ctx)
 
 
 bot = MyBot()

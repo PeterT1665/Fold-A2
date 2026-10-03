@@ -13,7 +13,9 @@ sys.path.insert(0, os.path.join(ROOT, "opponents"))
 
 from macpoker import Bot
 from macpoker.cli import resolve_bot
-from macpoker.match import MatchConfig, play_set
+from dataclasses import replace
+from multiprocessing import Pool
+from macpoker.match import MatchConfig, MatchRunner
 from macpoker.transport import InProcessTransport
 
 
@@ -60,27 +62,33 @@ def points(chips):
     return pts
 
 
+def run_game(task):
+    specs, deals, seed, k = task
+    cfg = MatchConfig(seats=len(specs), deals=deals, seed=f"arena{seed}", offset=k)
+    return MatchRunner(cfg, [InProcessTransport(factory(sp)(), name=sp) for sp in specs]).run().chips
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("lineup")
     ap.add_argument("--deals", type=int, default=200)
     ap.add_argument("--seeds", type=int, default=3)
+    ap.add_argument("--jobs", type=int, default=8)
     a = ap.parse_args()
     specs = a.lineup.split(",")
-    pts = defaultdict(float); chips = defaultdict(float); wins = defaultdict(int); games = 0
-    for seed in range(a.seeds):
-        cfg = MatchConfig(seats=len(specs), deals=a.deals, seed=f"arena{seed}")
-        res = play_set(cfg, lambda k: [InProcessTransport(factory(s)(), name=s) for s in specs])
-        for r in res:
-            games += 1
-            p = points(r.chips)
-            for i, s in enumerate(specs):
-                pts[i] += p[i]; chips[i] += r.chips[i]
-                wins[i] += r.chips[i] == max(r.chips)
+    tasks = [(specs, a.deals, sd, k) for sd in range(a.seeds) for k in range(len(specs))]
+    with Pool(a.jobs) as pool:
+        results = pool.map(run_game, tasks, chunksize=1)
+    pts = defaultdict(float); chips = defaultdict(float); wins = defaultdict(int); games = len(results)
+    for c in results:
+        p = points(c)
+        for i in range(len(specs)):
+            pts[i] += p[i]; chips[i] += c[i]
+            wins[i] += c[i] == max(c)
     print(f"{games} games x {a.deals} deals, {len(specs)} seats")
     print(f"{'bot':<18}{'avg pts':>9}{'chips/game':>12}{'win%':>8}")
-    for i, s in sorted(enumerate(specs), key=lambda t: -pts[t[0]]):
-        print(f"{s:<18}{pts[i]/games:>9.2f}{chips[i]/games:>12.0f}{100*wins[i]/games:>7.0f}%")
+    for i, sp in sorted(enumerate(specs), key=lambda t: -pts[t[0]]):
+        print(f"{sp:<18}{pts[i]/games:>9.2f}{chips[i]/games:>12.0f}{100*wins[i]/games:>7.0f}%")
 
 
 if __name__ == "__main__":

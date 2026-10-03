@@ -90,3 +90,13 @@ def preflop_action(state, rng, bb: int, raiser_class: OpponentClass | None):
     if eq >= need + 0.02 and score >= 8.0 and to_call <= 0.25 * (state.my_stack + state.street_bets[me]):
         return state.call()
     return state.fold()
+
+
+def decide(state, ctx):
+    """Street entry point (see CONTRACT.md)."""
+    raiser = None
+    for h in reversed(state.history):
+        if h[0] == "preflop" and h[2] == "raise" and h[1] != state.seat:
+            raiser = ctx.tracker.classify(state.player_at(h[1]))
+            break
+    return preflop_action(state, ctx.rng, ctx.blinds[1], raiser)

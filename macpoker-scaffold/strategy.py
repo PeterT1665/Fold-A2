@@ -212,3 +212,10 @@ class PostflopStrategy:
         if result is not None:
             return result
         return S.CALL if call_ok else S.CHECK_FOLD
+
+
+def default_postflop(state, ctx):
+    """Shared default policy used by flop/turn/river until their owners replace it."""
+    info = ctx.evaluator.evaluate(state.hole, state.board)
+    tex = ctx.evaluator.texture(state.board)
+    return ctx.strategy.decide(state, info, tex)
