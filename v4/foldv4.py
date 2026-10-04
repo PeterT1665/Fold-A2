@@ -490,7 +490,7 @@ class Brain:
             # big raise / jam: hands above the middle of the raiser's range are favourites
             pfr = (R.pfr + 0.12 * 10) / (R.hands + 10)
             width = max(0.03, min(1.0, pfr * (0.6 if nr >= 2 else 1.0)))
-            if pct < 0.025 or pct < 0.42 * width:
+            if pct < 0.045 or pct < 0.42 * width:  # always continue with 99+, AK
                 return s.call() if not s.can_raise or to_call >= s.my_stack else s.all_in()
             return s.fold()
         if nr == 1:
