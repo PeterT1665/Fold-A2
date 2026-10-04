@@ -126,3 +126,17 @@ flop in 17-29% of hands, and folding 54-67% of the time facing a postflop bet. B
 tight profile like ours (idc: VPIP 15, flop 8%) finished mid-table (0.49). One of the top-5, regrets,
 bets or raises only 4 times per 100 hands, so aggression alone does not explain it. Gaps between
 bots with 20+ games are small (place 0.42-0.49), so treat all of this as noise-level.
+
+## Do our opponent labels match the ladder? (77 scraped games, Oct 4)
+
+We ran `OpponentTracker` over every scraped game and compared its end-of-game label with how each bot
+really played. Labels are accurate: TIGHT_FOLD bots fold 68% to postflop bets, BALANCED 43%,
+OVER_AGGRESSIVE bots bet 4.8 times per call. Field mix: 40% OVER_AGGRESSIVE, 30% TIGHT_FOLD,
+27% BALANCED, **1% CALLING_STATION**, so the calling-station exploits rarely fire on the ladder.
+One mismatch: OVER_AGGRESSIVE bots fold 54% to bets, more than BALANCED (43%), while
+`range_model.fold_probs` scales their folds down (x0.7). The per-player fold rates added in
+`45a7af7` mostly correct that. No change made.
+
+Also from the same data (68 games, 5,946 first-in opens): weak opens lose chips (button, Chen < 6: -1.5 to
+-2.9 per open; early position, Chen < 6: -3 to -8), strong opens earn about +10. Our own 25 opens were
+all Chen >= 5 and netted +48. Do not widen opens.
