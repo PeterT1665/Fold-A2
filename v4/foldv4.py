@@ -490,6 +490,12 @@ class Brain:
             # big raise / jam: hands above the middle of the raiser's range are favourites
             pfr = (R.pfr + 0.12 * 10) / (R.hands + 10)
             width = max(0.03, min(1.0, pfr * (0.6 if nr >= 2 else 1.0)))
+            if callers_after:
+                # someone already called the jam: their range is strong, continue only with QQ+/AKs
+                if pct < 0.025:
+                    return s.call() if not s.can_raise or to_call >= s.my_stack else s.all_in()
+                return s.fold()
+            # hands above the middle of the jammer's range are favourites
             if pct < 0.045 or pct < 0.42 * width:  # always continue with 99+, AK
                 return s.call() if not s.can_raise or to_call >= s.my_stack else s.all_in()
             return s.fold()
