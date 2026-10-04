@@ -18,7 +18,7 @@ from field_model import FIELD
 from keys import facing_bucket, pf_key, pf_pos, pf_sbucket, post_key
 from pf_table import PF
 
-OVERBET_CAP = 2.2
+OVERBET_CAP = 1.6
 STREET_NO = {"preflop": 0, "flop": 1, "turn": 2, "river": 3}
 NC = len(ALL_COMBOS)
 COMBO_PCT = [PF[hand_class(a, b)][2] for a, b in ALL_COMBOS]
@@ -307,7 +307,7 @@ class Brain:
                         for b in range(7):
                             p = field_p(post_key(st, fb, b))
                             rtot = sum(p[3:])
-                            v = 0.6 * p[3 + sb_] + 0.4 * rtot / 4  # size-specific, smoothed
+                            v = 0.9 * p[3 + sb_] + 0.1 * rtot / 4  # size-specific, smoothed
                             tab.append(v ** ex)
                     else:  # call / check
                         col = 1 if kind == "call" else 2
@@ -564,7 +564,7 @@ class Brain:
         # position: are we last to act on this street among live players?
         live = [x for x in range(n) if not s.folded[x] and s.stacks[x] > 0]
         ip = self._in_position(s, live)
-        R = 1.0 if st == 3 else ((0.95 if ip else 0.86) if st == 1 else (0.97 if ip else 0.91))
+        R = 1.0 if st == 3 else ((1.0 if ip else 0.92) if st == 1 else (1.0 if ip else 0.95))
         if len(W) >= 2:
             R *= 0.95
 
@@ -575,7 +575,8 @@ class Brain:
             allin_call = to_call >= my_stack
             Rc = 1.0 if (allin_call or st == 3) else R
             options.append((0.0, s.fold()))
-            options.append((eq0 * (pot + to_call) * Rc - to_call, s.call()))
+            big = to_call >= 0.9 * (pot - to_call)  # pot-size+ bets: ladder data says call a bit tighter
+            options.append((eq0 * (pot + to_call) * Rc - to_call - (0.04 * pot if big else 0.0), s.call()))
 
         if s.can_raise:
             cur = max(s.street_bets)
@@ -605,7 +606,7 @@ class Brain:
         # tie-break toward passive: a bet must beat checking by a small margin
         if best[1].kind == "raise":
             passive = options[0] if to_call == 0 else max(options[:2], key=lambda o: o[0])
-            margin = 0.02 if eq0 >= 0.4 else 0.06  # bluffs lean hardest on the fold model
+            margin = 0.02 if eq0 >= 0.4 else 0.10  # bluffs lean hardest on the fold model
             if best[0] < passive[0] + margin * pot:
                 best = passive
         self.last_debug = (round(eq0, 3), [(round(e, 1), a.kind, a.amount) for e, a in options], round((time.time() - t0) * 1000))

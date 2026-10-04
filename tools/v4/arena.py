@@ -91,7 +91,7 @@ def main():
     rng = random.Random(a.seed)
     tables = [(rng.sample(pool, a.seats - 1), f"{a.seed}{i}") for i in range(a.tables)]
     jobs = [(c, opps, sd, a.deals, a.seats) for c in a.cands for opps, sd in tables]
-    with Pool(a.jobs) as p:
+    with Pool(a.jobs, maxtasksperchild=1) as p:
         res = p.map(run_table, jobs, chunksize=1)
     T = a.tables
     per = {c: res[i * T:(i + 1) * T] for i, c in enumerate(a.cands)}
@@ -99,12 +99,12 @@ def main():
     for c in a.cands:
         r = per[c]
         print(f"{c:40} pts/game {sum(x[0] for x in r) / T:.3f}  chips/game {sum(x[1] for x in r) / T:+7.1f}  1sts {sum(x[2] for x in r)}/{T * a.seats}")
-    if len(a.cands) >= 2:
-        A, B = per[a.cands[0]], per[a.cands[1]]
+    for cb in a.cands[1:]:
+        A, B = per[a.cands[0]], per[cb]
         d = [b[0] - x[0] for x, b in zip(A, B)]
         m = sum(d) / T
         sd = (sum((x - m) ** 2 for x in d) / max(T - 1, 1)) ** 0.5 / T ** 0.5
-        print(f"B - A placement pts/game {m:+.3f} +/- {sd:.3f}; B better on {sum(x > 0 for x in d)}/{T} tables, worse on {sum(x < 0 for x in d)}")
+        print(f"{cb}: B - A placement pts/game {m:+.3f} +/- {sd:.3f}; B better on {sum(x > 0 for x in d)}/{T} tables, worse on {sum(x < 0 for x in d)}")
 
 
 if __name__ == "__main__":
