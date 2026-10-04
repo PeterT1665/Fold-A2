@@ -246,3 +246,22 @@ estimate with the true equity). 16,673 scored decisions from 188 games; 8,234 re
   coefficient's 95% bootstrap range is -0.027 to +0.015, i.e. no evidence either way. Mean chips matters: each +100 chips per game is worth
   about 0.027 of finishing place. We average +169 chips (typical regular +46), predicted place about 0.45, observed 0.48.
 - Bottom line: no change found that is both real and measurable; the gap to the very best bots is general skill after the flop.
+
+## "How are the best bots better after the flop?" (Oct 4, 15:00-15:20)
+
+`python tools/flop_policy_compare.py` (flop hands by the evaluator's hand class: share of flops, postflop profit, bet rate, fold rate, raise rate).
+23,914 flop hands (4,828 by the top-placing bots, 391 by us).
+
+- **Same flop policy by hand class.** With no bet to face, top / us / rest bet: medium made hands 64% / 64% / 54%, strong made 75% / 76% / 85%,
+  weak draws 53% / 38% / 41%, trash 38% / 32% / 37%. Facing a flop bet, fold rates are alike (trash 85 / 82 / 76%, medium 33 / 27 / 35%).
+  The top bots slow-play the nuts more (bet 63% vs 96% for the rest, n=82) with the same profit (+106 vs +102).
+- **Postflop profit per flop hand by class (chips won/lost from the flop on):** strong made us +102, top +75, rest +55; medium +48 / +19 / +19;
+  weak draw +29 / +15 / +9; trash +11 / +5 / +2. We are at least as good in every class (only 391 flop hands of ours, and we reach the flop with
+  better hands: trash is 16% of our flops vs 24% for the top bots, so some of this is selection).
+- **The "top bots" are mostly a selection effect.** Split-half test (26 regulars, 2000 random splits of each bot's games): a bot's average place in one half predicts
+  the other half with correlation only +0.45; the 5 best placers in half A averaged place 0.40 there but 0.48 in half B (field 0.51), so only about 30% of the
+  apparent edge reappears. Average chips per game is a much better skill signal (split-half correlation +0.87; top 5 by chips: +168 in half A, +86 in half B,
+  field -46).
+- **By average chips per game we rank 1st of 26 regulars (+154 +/- 79 over 36 games)**, tied within error with the GOON (+148), yep (+146), Gladiators (+145),
+  catherine (+125), merch where (+113). Field median +24.
+- Conclusion: no postflop deficit found; the placement gap to some bots is mostly variance. No change made.
