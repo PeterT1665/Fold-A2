@@ -163,3 +163,22 @@ So the "strong hands ignore the big-call margin" exemption holds even for two pa
 just two coolers. Our bot made 0 big calls with no pair. `tools/check_decisions.py` also checks each of our
 postflop folds and calls against the opponents' real hole cards: 83 decisions, 6 clearly wrong folds (mostly cheap
 flop folds), the rest balanced.
+
+## Looking for our own mistakes (20 of our games, 135 scraped games, Oct 4 afternoon)
+
+Since the 12:58 re-upload of the identical v3.5 build: 16 games, +5,488 chips, average place 3.6 of 8, five 1sts.
+Tools: `tools/our_lines.py` (our bets/raises/folds against real cards and against no-hindsight hand strength),
+`tools/check_decisions.py` (each postflop fold/call vs the opponents' real hole cards).
+
+- **Hindsight trap:** grouping our bets by equity against the opponents' *real* cards makes bluffs look like they never
+  work (folded hands are weak, so they flatter our equity). Use hand strength against random hands instead.
+- Postflop opening bets, whole field (n about 8,700): one pair earns +10 (flop) / +18 (turn); air or a draw -0 / -13;
+  two pair or better +32 / +38. Ours: one pair +17 / +24, air -5 / -10 (same as the field).
+- Two pair or better: ours +0 / -3 vs the field +32 / +38, but 3 of our 27 such bets lost 200 each (flush vs straight flush,
+  77 vs an 8, etc). Our 7 overbets of 2.6x to 17x pot averaged **+40** (not a leak); our 20 normal-size bets averaged -13.
+  So `v3.4-jamcap` is NOT supported by this data.
+- Bets that get re-raised: field 10%, ours 10%. Bettor then folds 61% (field) vs 77% (ours); with air/draw ours get re-raised
+  22% vs 11% (10 events). Too small to act on.
+- Folds and calls vs real cards (83 decisions): folds that should have called and calls that should have folded cost about the
+  same (411 vs 348 chips of equity gap). No systematic over-folding or over-calling.
+- Stack-offs: 4 of 8 lost, but we were ahead in 5 of them (equity 68%, 95%, 93%, 78%, 65%) and behind in 2 (43%, 5%).
