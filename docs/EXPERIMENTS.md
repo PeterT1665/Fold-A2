@@ -290,3 +290,16 @@ by street x hand class x bet faced. Two random halves of the games must agree on
   (about +5.6 per 100-hand game): flop +825, turn +1,695, river -490 (v4 loses -1,566 continuing on the river where v3.5 folds, gains +1,076
   folding where v3.5 continues). Bootstrap 95% range for the total: -559 to +4,598, i.e. positive but not distinguishable from zero. Bets, raises, sizing and
   preflop are not scored.
+
+## "v3.5 folds too early / should check instead" (teammate's diagnosis), tested Oct 4 16:30
+
+- **Folds too early?** 8,115 postflop decisions facing a bet (v3.5 replayed as every seat on real hands, true equity vs real cards). Calling EVERY fold of a class would
+  earn: flop small bet -0.6 +/- 1.2, flop medium -3.8, flop big -16.4, turn medium -7.4, turn big -17.8, river medium/small -17.3, river big -51.4 chips each. So folds are right
+  on average in every size class. Hindsight "missed value" (11k on the flop) is outweighed by the folds that were right (61 per game saved on the flop). Mild lean: regret from
+  folds exceeds regret from calls by about 8 chips per game on each of flop and turn; threshold shifts did not hold on held-out games; v4 continuing where v3.5 folds earns
+  +0.9 (flop) and +2.9 (turn) per decision, about +4 chips per game at best.
+- **Should check instead of bet?** Only one class where our bets earn clearly less than the field's checks: flop, strong made hand, heads-up (ours +7, n=44; field check +32,
+  field bet +30). Our size (about 1x pot) and fold rate (62% vs 61%) match the field; the gap is 5 stack losses in 44 (11.4% vs field 5.9%, 125/2106; chance of 5+ if we were like
+  the field 11.8%). Three of the five were calling off big raises with one pair / weak two pair against a better kicker or trips; across the field, calling a big raise after your
+  own flop/turn bet is about break-even (flop strong -5 n=121, turn strong -11 n=51, turn medium big -38 n=38), and we are in those spots roughly 3 times per 50 games.
+- Conclusion: no leak worth a change. Candidate tweak if ever wanted: fold one pair / weak two pair to an all-in raise after our own flop bet (worth under +1 chip per game).
