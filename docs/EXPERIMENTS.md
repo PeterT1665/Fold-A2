@@ -278,3 +278,15 @@ by street x hand class x bet faced. Two random halves of the games must agree on
 - **We already do it.** Our bet rate with made hands when checked to (turn/river, heads-up): two pair+ 86% / 81% vs the field's 73% / 68%; one pair 69% / 40% vs 57% / 41%.
   Matching the field's rate wherever we are below it is worth at most +3.4 chips per 100-hand game (upper bound; selection inflates the field's gain).
 - Conclusion: no postflop action-frequency leak left to fix; nothing shipped.
+
+## Ladder cooling off, and v4 vs v3.5 head to head (Oct 4, 16:00-16:30)
+
+- Since the 12:58 re-upload: 14:00-16:00 averaged -6 chips per game over 26 games, against +343 per game over the first 16. Replaying the recent games
+  through the repo bot matches the ladder 98-100%, and the v4 zip only 81-96%, so the bot playing is v3.5, unchanged. Opponents' average Elo is flat
+  (1011-1031). Several weak bots improved (Halliday -2,742 -> +15, polygamous lavender marriage +9 -> +220, poke-bowl +5 -> +158) and the former winners
+  (the GOON +191 -> -101, us +233 -> -6) gave chips back. Halliday was not our donor (we did worse with it at the table: -175 vs +126).
+- `tools/head2head.py` replays the same real hands through two builds and scores every fold-vs-continue disagreement with true equity vs the opponents' real
+  cards. v3.5 vs v4 (360 hero-games, 4,597 postflop decisions facing a bet): they disagree on 23%. On those, v4's choices are worth +2,031 chips
+  (about +5.6 per 100-hand game): flop +825, turn +1,695, river -490 (v4 loses -1,566 continuing on the river where v3.5 folds, gains +1,076
+  folding where v3.5 continues). Bootstrap 95% range for the total: -559 to +4,598, i.e. positive but not distinguishable from zero. Bets, raises, sizing and
+  preflop are not scored.
