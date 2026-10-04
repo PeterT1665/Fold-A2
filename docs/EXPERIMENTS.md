@@ -214,3 +214,16 @@ win rate. Against the GOON / jongwon we average about -250 chips per game vs +25
 **Mean +179 chips per game but median about -10**: four huge wins (+1,566, +1,802, +760, +575) carry the average, and our
 average finishing place is the middle (0.49). Placement is what gets scored, so the typical game matters more than the mean.
 "Slow starter" (+13 early vs +107 late per 25 hands) disappears without our 3 best games (+5 vs +12). No change made.
+
+## Making the typical game better: what we checked (Oct 4, 14:00-14:40)
+
+- **Protect a lead (play tight when far ahead late):** 165 real games. After 70 hands a leader 100-250 chips ahead finishes 1st only 68% of
+  the time (n=53), 250-500 ahead 84% (n=31), 500+ 90% (n=10). We led after 70 hands in only 4 of 28 games and kept 1st in 3, so the
+  ceiling is about +1 place point per 28 games (+0.04 per game). Too small to detect or justify; not built (Chi's earlier version also never changed a place).
+- **Do the top-placing bots share a style?** Across 29 bots with >= 12 games, correlation of average place with VPIP +0.05, PFR +0.03,
+  first-in open % -0.07, fold-to-raise % +0.10, flops seen % +0.05, c-bet % -0.07. No style predicts placement. Top bots (Gladiators, catherine,
+  merch where, pocket-nuts, wicked wings combo, sungjinwoo) still lose chips on weak first-in opens (Chen < 4: -1.5, 4-6: -1.1 per open) but less
+  than everyone else (-6.2, -3.1); they earn about +3 chips more per open at every strength. Their edge is conversion, not looseness.
+- **Clock safety:** whole bot at 8 seats, 100 hands: 1.15 s per game normally (slowest decision 214 ms), 1.82 s per game with 10 CPU-burning processes
+  competing (slowest 353 ms). Budget is about 40 s per game, so a timeout is not a realistic risk.
+- **Bigger flop value bets:** already the case (see above), dropped.
