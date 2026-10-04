@@ -70,6 +70,10 @@ stations table (`house:call`, maniac) usually doesn't help on the ladder.
 | Peter's calibrated range tables (`calibrated-ranges`) | Worse than Jake's preflop alone in 6/10 and every arena lineup |
 | Chi's Monte Carlo preflop all-in calls | Lost to Jake's preflop 9/10 |
 | Copying specific bots (MAC bot, jongwon) | MAC's high Elo is variance (swings ~570/game, lost 1182 in one game). Tuning to the current field adds swings when the field changes |
+| Flop rewritten on exact equity vs range-weighted combos (sampled runouts), branch `flop-v2-combos` | Same-table vs v3.3 flop: 5 seats 3.84 vs 3.73 pts, 8 seats 6.52 vs 6.62 pts. A wash, more code and clock. (Differs from "flop on the turn engine" above: this one samples runouts) |
+| Flop aggression levers on ladder-shaped opponents: `BLUFF_BET_P` up, `BET_MARGIN` 0, flop-only `FOLD_MULT` 1.3-1.4, bluff gate 0.42 -> 0.3 | 6 variants x 96 games (8 seats, `opponents/ladder_*.py`): 5.47-5.53 pts vs 5.52 baseline. Inert |
+| Open wider preflop (any hand with Chen >= 4/5/6 raises first in) to see more flops | Verified it took effect (VPIP 18% -> 26%). 5.36-5.61 pts vs 5.52. No gain on that table |
+| Teammate's `turn.py` (time-budget fallback checked per combo + call size as bet/pot-before) | File was based on v3.1, so dropping it in would lose the commit guard, barrel margin and per-opponent logic. Applied just its two changes to current turn: ladder replay on 2 of our games (250 decisions) is identical to `main`. No effect, not shipped |
 
 ## Tournament table size (5 seats)
 
@@ -106,3 +110,19 @@ Nothing tuned for the 8-seat ladder measurably hurts at 5 seats.
   8+ scrims, luck-adjusted (see LADDER_DATA.md).
 - Seed everything: Python's `hash()` changes between processes, so use
   string seeds for any randomness that must be reproducible.
+
+## Ladder scheduling (scrape of the last 50 minutes, Oct 4)
+
+`tools/scrape_ladder.py` returned 51 games, 37 bots, tables of 5-8 seats (mostly 6).
+Games per bot: median 2, busiest idc 25, regrets 24, poke-bowl 24, jongwon 24. We played 1
+(31st of 37), and tungbot (#1 on the standings) also played 1. So how often a bot is scheduled
+is very uneven and is not simply "recently uploaded". Elo only moves when a bot plays, so a bot
+that plays rarely slides in rank while busy bots keep climbing. We don't know the scheduling rule;
+the standings page's "How the weekend works" dropdown may say. Our peak Elo was 1271 (second highest).
+
+`python tools/ladder_profiles.py` aggregates every scraped game into one row per bot. In this scrape
+the best average finishing places (0.42-0.44) came from bots with VPIP 30-43, PFR 18-31, seeing the
+flop in 17-29% of hands, and folding 54-67% of the time facing a postflop bet. Bots with a
+tight profile like ours (idc: VPIP 15, flop 8%) finished mid-table (0.49). One of the top-5, regrets,
+bets or raises only 4 times per 100 hands, so aggression alone does not explain it. Gaps between
+bots with 20+ games are small (place 0.42-0.49), so treat all of this as noise-level.
