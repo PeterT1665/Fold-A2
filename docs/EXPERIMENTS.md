@@ -182,3 +182,26 @@ Tools: `tools/our_lines.py` (our bets/raises/folds against real cards and agains
 - Folds and calls vs real cards (83 decisions): folds that should have called and calls that should have folded cost about the
   same (411 vs 348 chips of equity gap). No systematic over-folding or over-calling.
 - Stack-offs: 4 of 8 lost, but we were ahead in 5 of them (equity 68%, 95%, 93%, 78%, 65%) and behind in 2 (43%, 5%).
+
+## How catherine and tungbot play, and bet size vs result (148 scraped games, Oct 4)
+
+`python tools/bot_profile.py catherine tungbot love-of-da-game` (one row per bot plus the rest of the field).
+catherine 17 games (place 0.35, +106 chips/game), tungbot only 5 games (0.29, +140), us 21 games (0.41, +246 mean, +180 median).
+
+| | VPIP | flop seen | c-bet | flop bet | turn bet | showdown win |
+|---|---|---|---|---|---|---|
+| us | 17 | 9% | 62% | 0.61x | 1.97x | 63% |
+| catherine | 24 | 15% | 90% | 0.89x | 0.89x | 61% |
+| tungbot | 33 | 21% | 81% | 1.32x | 0.51x | 50% |
+| rest of field | 25 | 16% | 67% | 0.94x | 0.88x | 49% |
+
+- We play fewer hands and win showdowns far more often. Our mean chips/game is the highest of the three but our average
+  place is worse (finishing place is what the tournament scores).
+- Field opening bets by size (bettor held a pair or better, n about 7,000): flop result rises with size: <0.5x +0, 0.5-0.8x +13,
+  0.8-1.2x +22, 1.2-2x +24. Turn: +18, +20, +30, +34, and **+109 +/- 16 for overbets above 2x**. Air/draw bets earn about 0 on
+  the flop and lose 8 to 23 on the turn.
+- **"Bigger flop value bets" tested and dropped:** our flop value bets are already 0.87x (two pair+) and median 0.82x (one pair).
+  The 0.61x average was dragged down by probe bets with air/draws (0.42x). A candidate that forced value bets to >= 0.85x pot
+  changes nothing in the test spots.
+- C-bet frequency: air/draw c-bets are break-even across the field (n 2,077 flop, -0 per bet), so catherine's 90% c-bet rate is
+  not evidence that we should c-bet more.
