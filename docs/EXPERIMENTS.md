@@ -144,3 +144,22 @@ One mismatch: OVER_AGGRESSIVE bots fold 54% to bets, more than BALANCED (43%), w
 Also from the same data (68 games, 5,946 first-in opens): weak opens lose chips (button, Chen < 6: -1.5 to
 -2.9 per open; early position, Chen < 6: -3 to -8), strong opens earn about +10. Our own 25 opens were
 all Chen >= 5 and netted +48. Do not widen opens.
+
+## Big-bet calls by hand type, whole field (107 ladder games, 1,331 calls, Oct 4)
+
+Calls of a bet > half pot on turn/river, by every bot. "Fold would gain" = chips saved by folding at that point
+instead (positive means the call lost chips versus folding); +/- is one standard error.
+
+| Caller held | Calls | Fold would gain |
+|---|---|---|
+| trips or better, improving the board | 129 | -65 +/- 15 (calling is right) |
+| two pair on an unpaired board | 59 | -37 +/- 22 |
+| two pair on a paired board (leans on the board's pair) | 251 | -18 +/- 9 (calling still right) |
+| one pair | 567 | +3 +/- 5 (break-even) |
+| no pair / board plays | 325 | **+54 +/- 6** (clear mistake) |
+
+So the "strong hands ignore the big-call margin" exemption holds even for two pair on a paired board. Two of our
+-200 stack-offs came from that hand type (77 on 4c 8s 8c Qd; QQ on 2d 2h Ah) but the field data says it is not a leak,
+just two coolers. Our bot made 0 big calls with no pair. `tools/check_decisions.py` also checks each of our
+postflop folds and calls against the opponents' real hole cards: 83 decisions, 6 clearly wrong folds (mostly cheap
+flop folds), the rest balanced.
