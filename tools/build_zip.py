@@ -13,7 +13,7 @@ import tempfile
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(ROOT, "macpoker-scaffold")
+SRC = os.path.join(ROOT, os.environ.get("BOT_SRC", "macpoker-scaffold"))
 SKIP_DIRS = {"__pycache__", ".git"}
 SKIP_FILES = {"README.md", ".DS_Store"}
 

@@ -70,6 +70,10 @@ stations table (`house:call`, maniac) usually doesn't help on the ladder.
 | Peter's calibrated range tables (`calibrated-ranges`) | Worse than Jake's preflop alone in 6/10 and every arena lineup |
 | Chi's Monte Carlo preflop all-in calls | Lost to Jake's preflop 9/10 |
 | Copying specific bots (MAC bot, jongwon) | MAC's high Elo is variance (swings ~570/game, lost 1182 in one game). Tuning to the current field adds swings when the field changes |
+| Flop rewritten on exact equity vs range-weighted combos (sampled runouts), branch `flop-v2-combos` | Same-table vs v3.3 flop: 5 seats 3.84 vs 3.73 pts, 8 seats 6.52 vs 6.62 pts. A wash, more code and clock. (Differs from "flop on the turn engine" above: this one samples runouts) |
+| Flop aggression levers on ladder-shaped opponents: `BLUFF_BET_P` up, `BET_MARGIN` 0, flop-only `FOLD_MULT` 1.3-1.4, bluff gate 0.42 -> 0.3 | 6 variants x 96 games (8 seats, `opponents/ladder_*.py`): 5.47-5.53 pts vs 5.52 baseline. Inert |
+| Open wider preflop (any hand with Chen >= 4/5/6 raises first in) to see more flops | Verified it took effect (VPIP 18% -> 26%). 5.36-5.61 pts vs 5.52. No gain on that table |
+| Teammate's `turn.py` (time-budget fallback checked per combo + call size as bet/pot-before) | File was based on v3.1, so dropping it in would lose the commit guard, barrel margin and per-opponent logic. Applied just its two changes to current turn: ladder replay on 2 of our games (250 decisions) is identical to `main`. No effect, not shipped |
 
 ## Tournament table size (5 seats)
 
@@ -106,3 +110,120 @@ Nothing tuned for the 8-seat ladder measurably hurts at 5 seats.
   8+ scrims, luck-adjusted (see LADDER_DATA.md).
 - Seed everything: Python's `hash()` changes between processes, so use
   string seeds for any randomness that must be reproducible.
+
+## Ladder scheduling (scrape of the last 50 minutes, Oct 4)
+
+`tools/scrape_ladder.py` returned 51 games, 37 bots, tables of 5-8 seats (mostly 6).
+Games per bot: median 2, busiest idc 25, regrets 24, poke-bowl 24, jongwon 24. We played 1
+(31st of 37), and tungbot (#1 on the standings) also played 1. So how often a bot is scheduled
+is very uneven and is not simply "recently uploaded". Elo only moves when a bot plays, so a bot
+that plays rarely slides in rank while busy bots keep climbing. The rule (from the standings page, "How the weekend
+works"): **uploads play public scrims every few minutes for 3 hours, then every 10.** Our row said "scrims every
+few minutes until 15:58" after a 12:58 upload. A fresh upload also gets a 2x Elo multiplier ("new upload") for its
+first scrims. **Only the main submission at the Sun 18:00 lock counts; ladder results and Elo play no part in the
+tournament, so submitting late on Sunday is fine.** So: re-uploading (even an identical zip) restarts the burst of
+frequent scrims, which is the way to collect more of our own games. Our peak Elo was 1271 (second highest).
+
+`python tools/ladder_profiles.py` aggregates every scraped game into one row per bot. In this scrape
+the best average finishing places (0.42-0.44) came from bots with VPIP 30-43, PFR 18-31, seeing the
+flop in 17-29% of hands, and folding 54-67% of the time facing a postflop bet. Bots with a
+tight profile like ours (idc: VPIP 15, flop 8%) finished mid-table (0.49). One of the top-5, regrets,
+bets or raises only 4 times per 100 hands, so aggression alone does not explain it. Gaps between
+bots with 20+ games are small (place 0.42-0.49), so treat all of this as noise-level.
+
+## Do our opponent labels match the ladder? (77 scraped games, Oct 4)
+
+We ran `OpponentTracker` over every scraped game and compared its end-of-game label with how each bot
+really played. Labels are accurate: TIGHT_FOLD bots fold 68% to postflop bets, BALANCED 43%,
+OVER_AGGRESSIVE bots bet 4.8 times per call. Field mix: 40% OVER_AGGRESSIVE, 30% TIGHT_FOLD,
+27% BALANCED, **1% CALLING_STATION**, so the calling-station exploits rarely fire on the ladder.
+One mismatch: OVER_AGGRESSIVE bots fold 54% to bets, more than BALANCED (43%), while
+`range_model.fold_probs` scales their folds down (x0.7). The per-player fold rates added in
+`45a7af7` mostly correct that. No change made.
+
+Also from the same data (68 games, 5,946 first-in opens): weak opens lose chips (button, Chen < 6: -1.5 to
+-2.9 per open; early position, Chen < 6: -3 to -8), strong opens earn about +10. Our own 25 opens were
+all Chen >= 5 and netted +48. Do not widen opens.
+
+## Big-bet calls by hand type, whole field (107 ladder games, 1,331 calls, Oct 4)
+
+Calls of a bet > half pot on turn/river, by every bot. "Fold would gain" = chips saved by folding at that point
+instead (positive means the call lost chips versus folding); +/- is one standard error.
+
+| Caller held | Calls | Fold would gain |
+|---|---|---|
+| trips or better, improving the board | 129 | -65 +/- 15 (calling is right) |
+| two pair on an unpaired board | 59 | -37 +/- 22 |
+| two pair on a paired board (leans on the board's pair) | 251 | -18 +/- 9 (calling still right) |
+| one pair | 567 | +3 +/- 5 (break-even) |
+| no pair / board plays | 325 | **+54 +/- 6** (clear mistake) |
+
+So the "strong hands ignore the big-call margin" exemption holds even for two pair on a paired board. Two of our
+-200 stack-offs came from that hand type (77 on 4c 8s 8c Qd; QQ on 2d 2h Ah) but the field data says it is not a leak,
+just two coolers. Our bot made 0 big calls with no pair. `tools/check_decisions.py` also checks each of our
+postflop folds and calls against the opponents' real hole cards: 83 decisions, 6 clearly wrong folds (mostly cheap
+flop folds), the rest balanced.
+
+## Looking for our own mistakes (20 of our games, 135 scraped games, Oct 4 afternoon)
+
+Since the 12:58 re-upload of the identical v3.5 build: 16 games, +5,488 chips, average place 3.6 of 8, five 1sts.
+Tools: `tools/our_lines.py` (our bets/raises/folds against real cards and against no-hindsight hand strength),
+`tools/check_decisions.py` (each postflop fold/call vs the opponents' real hole cards).
+
+- **Hindsight trap:** grouping our bets by equity against the opponents' *real* cards makes bluffs look like they never
+  work (folded hands are weak, so they flatter our equity). Use hand strength against random hands instead.
+- Postflop opening bets, whole field (n about 8,700): one pair earns +10 (flop) / +18 (turn); air or a draw -0 / -13;
+  two pair or better +32 / +38. Ours: one pair +17 / +24, air -5 / -10 (same as the field).
+- Two pair or better: ours +0 / -3 vs the field +32 / +38, but 3 of our 27 such bets lost 200 each (flush vs straight flush,
+  77 vs an 8, etc). Our 7 overbets of 2.6x to 17x pot averaged **+40** (not a leak); our 20 normal-size bets averaged -13.
+  So `v3.4-jamcap` is NOT supported by this data.
+- Bets that get re-raised: field 10%, ours 10%. Bettor then folds 61% (field) vs 77% (ours); with air/draw ours get re-raised
+  22% vs 11% (10 events). Too small to act on.
+- Folds and calls vs real cards (83 decisions): folds that should have called and calls that should have folded cost about the
+  same (411 vs 348 chips of equity gap). No systematic over-folding or over-calling.
+- Stack-offs: 4 of 8 lost, but we were ahead in 5 of them (equity 68%, 95%, 93%, 78%, 65%) and behind in 2 (43%, 5%).
+
+## How catherine and tungbot play, and bet size vs result (148 scraped games, Oct 4)
+
+`python tools/bot_profile.py catherine tungbot love-of-da-game` (one row per bot plus the rest of the field).
+catherine 17 games (place 0.35, +106 chips/game), tungbot only 5 games (0.29, +140), us 21 games (0.41, +246 mean, +180 median).
+
+| | VPIP | flop seen | c-bet | flop bet | turn bet | showdown win |
+|---|---|---|---|---|---|---|
+| us | 17 | 9% | 62% | 0.61x | 1.97x | 63% |
+| catherine | 24 | 15% | 90% | 0.89x | 0.89x | 61% |
+| tungbot | 33 | 21% | 81% | 1.32x | 0.51x | 50% |
+| rest of field | 25 | 16% | 67% | 0.94x | 0.88x | 49% |
+
+- We play fewer hands and win showdowns far more often. Our mean chips/game is the highest of the three but our average
+  place is worse (finishing place is what the tournament scores).
+- Field opening bets by size (bettor held a pair or better, n about 7,000): flop result rises with size: <0.5x +0, 0.5-0.8x +13,
+  0.8-1.2x +22, 1.2-2x +24. Turn: +18, +20, +30, +34, and **+109 +/- 16 for overbets above 2x**. Air/draw bets earn about 0 on
+  the flop and lose 8 to 23 on the turn.
+- **"Bigger flop value bets" tested and dropped:** our flop value bets are already 0.87x (two pair+) and median 0.82x (one pair).
+  The 0.61x average was dragged down by probe bets with air/draws (0.42x). A candidate that forced value bets to >= 0.85x pot
+  changes nothing in the test spots.
+- C-bet frequency: air/draw c-bets are break-even across the field (n 2,077 flop, -0 per bet), so catherine's 90% c-bet rate is
+  not evidence that we should c-bet more.
+
+## "We climb then crash": is there a pattern? (25 of our games, Oct 4)
+
+No specific cause found. Elo per game moves +/-50; schedule strength is flat (opponents' average Elo 990-1060);
+we do best late in a game, not worst; our longest bottom-half run (6) occurs in 19% of random sequences with our
+win rate. Against the GOON / jongwon we average about -250 chips per game vs +250 without them (7 games each).
+**Mean +179 chips per game but median about -10**: four huge wins (+1,566, +1,802, +760, +575) carry the average, and our
+average finishing place is the middle (0.49). Placement is what gets scored, so the typical game matters more than the mean.
+"Slow starter" (+13 early vs +107 late per 25 hands) disappears without our 3 best games (+5 vs +12). No change made.
+
+## Making the typical game better: what we checked (Oct 4, 14:00-14:40)
+
+- **Protect a lead (play tight when far ahead late):** 165 real games. After 70 hands a leader 100-250 chips ahead finishes 1st only 68% of
+  the time (n=53), 250-500 ahead 84% (n=31), 500+ 90% (n=10). We led after 70 hands in only 4 of 28 games and kept 1st in 3, so the
+  ceiling is about +1 place point per 28 games (+0.04 per game). Too small to detect or justify; not built (Chi's earlier version also never changed a place).
+- **Do the top-placing bots share a style?** Across 29 bots with >= 12 games, correlation of average place with VPIP +0.05, PFR +0.03,
+  first-in open % -0.07, fold-to-raise % +0.10, flops seen % +0.05, c-bet % -0.07. No style predicts placement. Top bots (Gladiators, catherine,
+  merch where, pocket-nuts, wicked wings combo, sungjinwoo) still lose chips on weak first-in opens (Chen < 4: -1.5, 4-6: -1.1 per open) but less
+  than everyone else (-6.2, -3.1); they earn about +3 chips more per open at every strength. Their edge is conversion, not looseness.
+- **Clock safety:** whole bot at 8 seats, 100 hands: 1.15 s per game normally (slowest decision 214 ms), 1.82 s per game with 10 CPU-burning processes
+  competing (slowest 353 ms). Budget is about 40 s per game, so a timeout is not a realistic risk.
+- **Bigger flop value bets:** already the case (see above), dropped.
