@@ -117,8 +117,12 @@ Nothing tuned for the 8-seat ladder measurably hurts at 5 seats.
 Games per bot: median 2, busiest idc 25, regrets 24, poke-bowl 24, jongwon 24. We played 1
 (31st of 37), and tungbot (#1 on the standings) also played 1. So how often a bot is scheduled
 is very uneven and is not simply "recently uploaded". Elo only moves when a bot plays, so a bot
-that plays rarely slides in rank while busy bots keep climbing. We don't know the scheduling rule;
-the standings page's "How the weekend works" dropdown may say. Our peak Elo was 1271 (second highest).
+that plays rarely slides in rank while busy bots keep climbing. The rule (from the standings page, "How the weekend
+works"): **uploads play public scrims every few minutes for 3 hours, then every 10.** Our row said "scrims every
+few minutes until 15:58" after a 12:58 upload. A fresh upload also gets a 2x Elo multiplier ("new upload") for its
+first scrims. **Only the main submission at the Sun 18:00 lock counts; ladder results and Elo play no part in the
+tournament, so submitting late on Sunday is fine.** So: re-uploading (even an identical zip) restarts the burst of
+frequent scrims, which is the way to collect more of our own games. Our peak Elo was 1271 (second highest).
 
 `python tools/ladder_profiles.py` aggregates every scraped game into one row per bot. In this scrape
 the best average finishing places (0.42-0.44) came from bots with VPIP 30-43, PFR 18-31, seeing the
