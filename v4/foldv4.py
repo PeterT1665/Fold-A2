@@ -548,7 +548,7 @@ class Brain:
         if not W:
             return s.check() if s.to_call == 0 else s.call()
         clock = s.clock_ms
-        nsamp = 700 if clock > 15000 else (350 if clock > 6000 else 120)
+        nsamp = 1200 if clock > 15000 else (500 if clock > 6000 else 120)
         if len(W) >= 3:
             nsamp = int(nsamp * 0.7)
         seats, samples = self.simulate(hole, board, W, nsamp)
