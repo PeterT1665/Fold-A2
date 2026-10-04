@@ -95,7 +95,7 @@ class Stats:
 
     def fold_mult(self):
         r = (self.folded + FIELD_FOLD * 8) / (self.faced + 8)
-        return max(0.2, min(1.7, r / FIELD_FOLD))
+        return max(0.03, min(1.7, r / FIELD_FOLD))
 
     def aggr(self):
         r = (self.post_agg + FIELD_BET * 10) / (self.post_ops + 10)
@@ -312,7 +312,7 @@ class Brain:
                     else:  # call / check
                         col = 1 if kind == "call" else 2
                         stick = (1 - min(0.9, FIELD_FOLD * S.fold_mult())) / (1 - FIELD_FOLD)
-                        ex = 1.0 / max(0.5, min(2.0, stick)) if kind == "call" else 1.0
+                        ex = 1.0 / max(0.5, min(3.0, stick)) if kind == "call" else 1.0
                         tab = []
                         for b in range(7):
                             p = field_p(post_key(st, fb, b))
@@ -590,7 +590,13 @@ class Brain:
                 for k in (0.6, 1.0):
                     cands.add(int(round(cur + k * (pot + to_call))))
             # field response data covers bets up to ~2x pot; beyond that it overstates folds
-            if s.max_raise_to - my_sbet <= OVERBET_CAP * (pot + to_call):
+            # ...except against proven callers, where big value bets are what they pay off
+            cap = OVERBET_CAP
+            if all(self.st(s.players[x]).fold_mult() < 0.45 for x in W):
+                cap = 5.0
+                for f in (2.0, 3.0):
+                    cands.add(int(round(my_sbet + to_call + f * (pot + to_call))))
+            if s.max_raise_to - my_sbet <= cap * (pot + to_call):
                 cands.add(s.max_raise_to)
             for T in sorted(cands):
                 T = max(s.min_raise_to, min(T, s.max_raise_to))

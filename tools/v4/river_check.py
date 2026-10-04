@@ -17,6 +17,8 @@ sys.path.insert(0, os.path.join(ROOT, "v4"))
 from cards7 import evaluate, parse
 from macpoker.sdk import BotSession, load_bot_from_file
 
+STREET = os.environ.get("STREET", "river")  # STREET=turn scores turn calls by exact equity vs the real hand
+
 
 def spots_in(game, me, bot_path):
     bot = load_bot_from_file(bot_path)
@@ -45,7 +47,7 @@ def spots_in(game, me, bot_path):
             elif t == "street":
                 street, board = ev["street"], ev["board"]
                 sb_, cur, min_inc = [0] * n, 0, 2
-            elif t == "action" and ev["seat"] == seat and street == "river":
+            elif t == "action" and ev["seat"] == seat and street == STREET:
                 to_call = min(cur - sb_[seat], stacks[seat])
                 live = [x for x in range(n) if not folded[x]]
                 if to_call > 0 and len(live) == 2:
@@ -59,10 +61,23 @@ def spots_in(game, me, bot_path):
                             "history": [list(a) for a in log], "clock_ms": 20000, "players": players}
                     a = sess.handle(view)
                     b = [parse(c) for c in board]
-                    mine = evaluate([parse(c) for c in h["holes"][str(seat)]] + b)
-                    theirs = evaluate([parse(c) for c in h["holes"][str(opp)]] + b)
+                    hm = [parse(c) for c in h["holes"][str(seat)]]
+                    ho = [parse(c) for c in h["holes"][str(opp)]]
+                    left = [c for c in range(52) if c not in b + hm + ho]
+                    if len(b) == 5:
+                        rest = [()]
+                    elif len(b) == 4:
+                        rest = [(c,) for c in left]
+                    else:  # flop: every turn+river pair
+                        rest = [(x, y) for i, x in enumerate(left) for y in left[i + 1:]]
+                    eq = 0.0
+                    for r in rest:
+                        bb = b + list(r)
+                        mine, theirs = evaluate(hm + bb), evaluate(ho + bb)
+                        eq += 1.0 if mine > theirs else (0.5 if mine == theirs else 0.0)
+                    eq /= len(rest)
                     pot = sum(contrib)
-                    val = pot if mine > theirs else (pot / 2 - to_call / 2 if mine == theirs else -to_call)
+                    val = eq * (pot + to_call) - to_call
                     frac = to_call / max(pot - to_call, 1)
                     out.append((frac, val, a.kind != "fold", ev["action"] != "fold"))
             if t == "action":
