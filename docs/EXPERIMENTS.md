@@ -265,3 +265,16 @@ estimate with the true equity). 16,673 scored decisions from 188 games; 8,234 re
 - **By average chips per game we rank 1st of 26 regulars (+154 +/- 79 over 36 games)**, tied within error with the GOON (+148), yep (+146), Gladiators (+145),
   catherine (+125), merch where (+113). Field median +24.
 - Conclusion: no postflop deficit found; the placement gap to some bots is mostly variance. No change made.
+
+## What is each postflop action worth? Field data by situation (60,479 decisions, Oct 4 15:20)
+
+`python tools/action_values.py` : value of an action = hand result + chips already invested (chips gained from that moment on vs folding = 0),
+by street x hand class x bet faced. Two random halves of the games must agree on the sign.
+
+- **Calling is clearly negative in the same spots we already fold:** flop trash vs a big bet -69, flop weak draw vs big -27, flop medium vs big -15,
+  turn trash vs big -61, river trash vs big -95, river medium vs big -23. We fold these (20 of 20 flop trash vs big, 26 of 28 weak draws vs big).
+- **Betting beats checking, raising beats calling** for made hands, holding street, hand (two pair+ / one pair that improves the board), heads-up vs multiway and
+  position fixed: bet minus check +19 to +61 on turn/river, raise minus call +35 to +47 for two pair+ (halves agree everywhere but one cell).
+- **We already do it.** Our bet rate with made hands when checked to (turn/river, heads-up): two pair+ 86% / 81% vs the field's 73% / 68%; one pair 69% / 40% vs 57% / 41%.
+  Matching the field's rate wherever we are below it is worth at most +3.4 chips per 100-hand game (upper bound; selection inflates the field's gain).
+- Conclusion: no postflop action-frequency leak left to fix; nothing shipped.
