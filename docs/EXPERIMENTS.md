@@ -205,3 +205,12 @@ catherine 17 games (place 0.35, +106 chips/game), tungbot only 5 games (0.29, +1
   changes nothing in the test spots.
 - C-bet frequency: air/draw c-bets are break-even across the field (n 2,077 flop, -0 per bet), so catherine's 90% c-bet rate is
   not evidence that we should c-bet more.
+
+## "We climb then crash": is there a pattern? (25 of our games, Oct 4)
+
+No specific cause found. Elo per game moves +/-50; schedule strength is flat (opponents' average Elo 990-1060);
+we do best late in a game, not worst; our longest bottom-half run (6) occurs in 19% of random sequences with our
+win rate. Against the GOON / jongwon we average about -250 chips per game vs +250 without them (7 games each).
+**Mean +179 chips per game but median about -10**: four huge wins (+1,566, +1,802, +760, +575) carry the average, and our
+average finishing place is the middle (0.49). Placement is what gets scored, so the typical game matters more than the mean.
+"Slow starter" (+13 early vs +107 late per 25 hands) disappears without our 3 best games (+5 vs +12). No change made.
