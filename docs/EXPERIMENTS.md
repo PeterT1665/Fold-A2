@@ -227,3 +227,22 @@ average finishing place is the middle (0.49). Placement is what gets scored, so 
 - **Clock safety:** whole bot at 8 seats, 100 hands: 1.15 s per game normally (slowest decision 214 ms), 1.82 s per game with 10 CPU-burning processes
   competing (slowest 353 ms). Budget is about 40 s per game, so a timeout is not a realistic risk.
 - **Bigger flop value bets:** already the case (see above), dropped.
+
+## Trying to play better: decision quality vs real cards (Oct 4, 14:30-15:00)
+
+Tools: `tools/decision_regret.py` (every postflop fold/call vs a bet, judged against the opponents' real hole cards),
+`tools/make_instrumented.py` + `tools/calib_collect.py` (replay real hands through our bot and compare its own equity
+estimate with the true equity). 16,673 scored decisions from 188 games; 8,234 replayed decisions.
+
+- **Fold/call accuracy is not what separates the top bots.** Regret per decision (chips given away vs the better of fold/call): us 7.8,
+  field about 8; merch where 11.3, idc 10.5, catherine 8.3 (all place well), netanyahu 2.4, kurimanju 4.0.
+- **Where the chips come from, per 100 hands:** us +163, top-placing bots +129, rest of field -33. Top bots win 13.1 pots per 100 hands
+  without a showdown (+158 chips) vs our 8.4 (+81), but fold after investing more (-130 vs -47). Our profit sits in showdowns and big pots.
+- **Our model's equity estimate vs the truth:** flop is low by 6-10 points in every range (n about 4,900); turn about right (+0 to +5);
+  river overestimates strong hands (says 69%, truth 56%). **Correcting it does not pay:** shifting the flop estimate +0.07 gains +380 chips on one
+  half of the games and loses 118 on the other half; turn correction is positive on both halves but only about +1.8 chips per 100-hand game;
+  river flips sign. Not shipped.
+- **Does swing hurt placement?** Across 29 bots with >= 12 games: place = 0.56 - 0.027 x (mean chips/100) - 0.012 x (sd/100); the swing
+  coefficient's 95% bootstrap range is -0.027 to +0.015, i.e. no evidence either way. Mean chips matters: each +100 chips per game is worth
+  about 0.027 of finishing place. We average +169 chips (typical regular +46), predicted place about 0.45, observed 0.48.
+- Bottom line: no change found that is both real and measurable; the gap to the very best bots is general skill after the flop.
