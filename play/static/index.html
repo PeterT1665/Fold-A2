@@ -18,6 +18,13 @@
       <input id="name" maxlength="20" placeholder="You">
     </label>
 
+    <div class="field">Game
+      <div class="seg" id="gametype">
+        <button data-v="knockout" class="on">Knockout (normal poker)</button><button data-v="tournament">MAC tournament format</button>
+      </div>
+      <small id="gametype-help">Stacks carry over, the button and blinds move round the table, blinds go up over time, and busted players are out. Last player standing wins.</small>
+    </div>
+
     <div class="field">Players at the table
       <div class="seg" id="seats">
         <button data-v="5">5</button><button data-v="6" class="on">6</button><button data-v="7">7</button><button data-v="8">8</button>
@@ -44,8 +51,17 @@
       <div id="custom" class="custom hidden"></div>
     </div>
 
+    <div class="row" id="ko-opts">
+      <div class="field">Starting chips
+        <div class="seg" id="stack"><button data-v="200" class="on">200</button><button data-v="500">500</button><button data-v="1000">1000</button></div>
+      </div>
+      <div class="field">Blinds go up
+        <div class="seg" id="levels"><button data-v="10" class="on">Every 10 hands</button><button data-v="20">Every 20</button><button data-v="0">Never</button></div>
+      </div>
+    </div>
+
     <div class="row">
-      <div class="field">Hands
+      <div class="field" id="hands-field">Hands
         <div class="seg" id="hands"><button data-v="20">20</button><button data-v="50" class="on">50</button><button data-v="100">100</button></div>
       </div>
       <div class="field">Bot speed
@@ -87,6 +103,7 @@
     <div class="brand">Fold A2</div>
     <div id="hand-no" class="pill"></div>
     <div class="spacer"></div>
+    <button id="replay-btn" class="ghost hidden">Rewatch hands</button>
     <button id="share-btn" class="ghost hidden">Invite link</button>
     <button id="leave" class="ghost">Leave</button>
   </header>
@@ -135,7 +152,29 @@
     <div class="panel">
       <h2>Game over</h2>
       <ol id="final-list" class="scores big"></ol>
+      <button id="final-replay" class="ghost big-ghost">Rewatch hands</button>
       <button id="again" class="primary big">Play again</button>
+    </div>
+  </div>
+  <div id="replay" class="replay hidden">
+    <div class="replay-box">
+      <div class="replay-head"><b id="rp-title">Rewatch</b><button id="rp-close" class="ghost">Close ✕</button></div>
+      <div class="replay-body">
+        <ol id="rp-list" class="rp-list"></ol>
+        <div class="rp-view">
+          <div class="table rp-table">
+            <div class="felt"><div class="center"><div id="rp-pot" class="pot"></div><div id="rp-board" class="board"></div></div></div>
+            <div id="rp-seats" class="seats-abs"></div>
+          </div>
+          <div id="rp-caption" class="rp-caption"></div>
+          <div class="rp-controls">
+            <button id="rp-first" class="ghost">⏮</button><button id="rp-prev" class="ghost">◀ Back</button>
+            <button id="rp-play" class="primary">▶ Play</button>
+            <button id="rp-next" class="ghost">Next ▶</button><button id="rp-last" class="ghost">⏭</button>
+          </div>
+          <small class="muted">← → step · Space play/pause · Esc close. You see your own cards, every bot's cards, and other players' cards only if they were shown.</small>
+        </div>
+      </div>
     </div>
   </div>
 </section>

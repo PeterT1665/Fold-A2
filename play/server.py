@@ -30,10 +30,15 @@ sys.path.insert(0, os.path.join(ROOT, "v4"))
 from macpoker import Bot
 from macpoker.actions import Action
 from macpoker.bots import BUILTINS
-from macpoker.cards import parse_cards
+from macpoker.cards import parse_cards, shuffled_deck
+from macpoker.hand import Sink, play_hand
 from macpoker.evaluator import evaluate, hand_name
 from macpoker.match import MatchConfig, MatchRunner
-from macpoker.transport import InProcessTransport, Transport
+from macpoker.transport import BotDied, InProcessTransport, ProtocolError, Transport
+
+# knockout mode: blinds by level (raised every N hands if enabled)
+LEVELS = [(1, 2), (2, 4), (3, 6), (5, 10), (10, 20), (15, 30), (25, 50), (50, 100), (75, 150), (100, 200),
+          (150, 300), (250, 500), (400, 800), (600, 1200), (1000, 2000), (1500, 3000), (2500, 5000)]
 
 
 # ------------------------------------------------------------------ bots
@@ -85,7 +90,8 @@ class HumanTransport(Transport):
         self.reply = None
 
     def send(self, msg):
-        self.room.observe(self.pid, msg)
+        if self.room.mode == "tournament":
+            self.room.observe(self.pid, msg)
 
     def act(self, view, timeout_ms):
         with self.cv:
@@ -120,7 +126,8 @@ class PacedBot(Transport):
         self.inner = InProcessTransport(bot)
 
     def send(self, msg):
-        self.room.observe(self.pid, msg)
+        if self.room.mode == "tournament":
+            self.room.observe(self.pid, msg)
         self.inner.send(msg)
 
     def act(self, view, timeout_ms):
@@ -134,10 +141,60 @@ class PacedBot(Transport):
         return a, ms
 
 
+def _ordinal(n):
+    return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
+
+
+class KnockoutSink(Sink):
+    """Feeds one knockout hand to the players still in. seat_map[seat] = player id."""
+
+    def __init__(self, room, transports, seat_map):
+        self.room, self.tx, self.seat_map = room, transports, seat_map
+
+    def _send(self, pid, msg):
+        if self.room.dead[pid]:
+            return
+        try:
+            self.tx[pid].send(msg)
+        except (BotDied, ProtocolError):
+            self.room.dead[pid] = True
+
+    def notify(self, seat, msg):
+        out = {**msg, "players": list(self.seat_map)}
+        if seat is None:
+            self.room.observe(None, out, primary=True)
+            for pid in self.seat_map:
+                self._send(pid, out)
+        else:
+            pid = self.seat_map[seat]
+            self.room.observe(pid, out, primary=True)
+            self._send(pid, out)
+
+    def request_action(self, seat, view):
+        pid = self.seat_map[seat]
+        if self.room.dead[pid] or self.room.closed:
+            return None
+        try:
+            a, _ = self.tx[pid].act({**view, "players": list(self.seat_map), "clock_ms": 600000}, 600000)
+            return a
+        except (BotDied, ProtocolError, TimeoutError):
+            self.room.dead[pid] = True
+            return None
+
+
 # ------------------------------------------------------------------ room
 class Room:
-    def __init__(self, seats, hands, lineup, humans, names, bot_delay, turn_limit, auto_next):
+    def __init__(self, seats, hands, lineup, humans, names, bot_delay, turn_limit, auto_next,
+                 mode="tournament", start_stack=200, level_hands=10):
         self.id = secrets.token_urlsafe(5)
+        self.mode = mode
+        self.start_stack = start_stack
+        self.level_hands = level_hands      # 0 = blinds never go up
+        self.level = 0
+        self.order = list(range(seats))     # knockout: fixed seating, clockwise
+        self.stacks = [start_stack] * seats
+        self.out_place = {}                 # pid -> finishing place
+        self.dead = [False] * seats
         self.n = seats
         self.num_hands = hands
         self.bot_delay = bot_delay
@@ -167,6 +224,8 @@ class Room:
         self.human_tx = {}
         self.ack = threading.Event()
         self.final = None
+        self.history = []       # finished hands for the replay viewer
+        self.rec = None         # hand being recorded
 
     def _bot_name(self, bid, pid):
         short = {"v4": "Fold-A2 v4.2", "v35": "Fold-A2 v3.5"}.get(bid)
@@ -215,6 +274,8 @@ class Room:
             else:
                 t = PacedBot(self, pid, CATALOG[p["bot"]][1](f"{self.id}:{pid}"))
             transports.append(t)
+        if self.mode == "knockout":
+            return self._run_knockout(transports)
         cfg = MatchConfig(seats=self.n, deals=self.num_hands, seed=self.id, base_time_ms=10**12, increment_ms=0)
         try:
             res = MatchRunner(cfg, transports).run()
@@ -227,6 +288,85 @@ class Room:
                 self.status = "error"
                 self.events.append(f"Table error: {exc}")
                 self.bump()
+
+    def _run_knockout(self, tx):
+        rng = random.Random(self.id)
+        rng.shuffle(self.order)
+        try:
+            for t in tx:
+                t.start()
+            self._hello(tx)
+            button_pid = self.order[0]
+            hand_no = 0
+            while not self.closed and hand_no < 2000:
+                alive = [p for p in self.order if self.stacks[p] > 0]
+                if len(alive) < 2:
+                    break
+                if self.level_hands and hand_no and hand_no % self.level_hands == 0 and self.level < len(LEVELS) - 1:
+                    self.level += 1
+                    sb, bb = LEVELS[self.level]
+                    with self.lock:
+                        self.events.append(f"Blinds up: {sb}/{bb}")
+                    self._hello(tx)
+                sb, bb = LEVELS[self.level]
+                # seat 0 is always the button (as in the tournament engine); the screen keeps players fixed
+                k = alive.index(button_pid)
+                seat_map = alive[k:] + alive[:k]
+                before = {p: self.stacks[p] for p in seat_map}
+                res = play_hand([self.stacks[p] for p in seat_map], 0, shuffled_deck(rng),
+                                KnockoutSink(self, tx, seat_map), sb, bb, hand_no)
+                busted = []
+                with self.lock:
+                    for seat, p in enumerate(seat_map):
+                        self.stacks[p] += res.deltas[seat]
+                        if self.stacks[p] <= 0:
+                            busted.append(p)
+                    # players knocked out in the same hand: the one who started with more places higher
+                    left = len(alive)
+                    for p in sorted(busted, key=lambda q: before[q]):
+                        self.out_place[p] = left
+                        left -= 1
+                        self.events.append(f"{self.players[p]['name']} is knocked out ({_ordinal(self.out_place[p])})")
+                    self.bump()
+                if busted:
+                    self._hello(tx)
+                # button moves to the next player still in, clockwise
+                pos = self.order.index(button_pid)
+                for i in range(1, len(self.order) + 1):
+                    nxt = self.order[(pos + i) % len(self.order)]
+                    if self.stacks[nxt] > 0:
+                        button_pid = nxt
+                        break
+                hand_no += 1
+            alive = [p for p in self.order if self.stacks[p] > 0]
+            with self.lock:
+                for p in sorted(alive, key=lambda q: -self.stacks[q]):
+                    self.out_place[p] = 1 + sum(1 for q in alive if self.stacks[q] > self.stacks[p])
+                winner = min(self.out_place, key=self.out_place.get)
+                self.events.append(f"{self.players[winner]['name']} wins the game!")
+                self.final = {"chips": [self.stacks[p] - self.start_stack for p in range(self.n)],
+                              "places": self.out_place}
+                self.status = "finished"
+                self.bump()
+            for p, t in enumerate(tx):
+                try:
+                    t.send({"type": "match_end", "chips": [self.stacks[q] - self.start_stack for q in range(self.n)]})
+                except Exception:
+                    pass
+        except Exception as exc:
+            with self.lock:
+                self.status = "error"
+                self.events.append(f"Table error: {exc}")
+                self.bump()
+
+    def _hello(self, tx):
+        alive = [p for p in self.order if self.stacks[p] > 0]
+        for p in alive:
+            try:
+                tx[p].send({"type": "hello", "num_players": len(alive), "num_hands": 1000, "stack": self.start_stack,
+                            "blinds": list(LEVELS[self.level]), "time_bank_ms": 600000, "increment_ms": 0, "player": p})
+            except Exception:
+                self.dead[p] = True
 
     def close(self):
         self.closed = True
@@ -244,7 +384,7 @@ class Room:
             self.actor_seat = seat
             self.bump()
 
-    def observe(self, pid, msg):
+    def observe(self, pid, msg, primary=None):
         t = msg.get("type")
         with self.lock:
             if t == "hand_start":
@@ -252,23 +392,27 @@ class Room:
                     self.hand_no = msg["hand"]
                     n = self.n
                     self.table = {"hand": msg["hand"], "players": msg["players"], "button": msg["button"],
-                                  "stacks": list(msg["stacks"]), "bets": [0] * n, "folded": [False] * n,
+                                  "stacks": list(msg["stacks"]), "start": list(msg["stacks"]), "bets": [0] * n, "folded": [False] * n,
                                   "allin": [False] * n, "holes": {}, "board": [], "street": "preflop",
                                   "pot": 0, "last": {}, "sb": None, "bb": None}
                     self.last_result = None
                     self.events.append(f"— Hand {msg['hand'] + 1} —")
+                    self.rec = {"hand": msg["hand"] + 1, "holes": {}, "frames": []}
                 self.table["holes"][pid] = msg["hole"]
+                self.rec["holes"][pid] = msg["hole"]
                 self.bump()
                 return
-            if pid != 0 or self.table is None:
-                return  # broadcast messages are processed once, from player 0's copy
+            if (primary is None and pid != 0) or self.table is None:
+                return  # tournament mode: broadcast messages are processed once, from player 0's copy
             T = self.table
             players = msg.get("players") or T["players"]
             name = lambda seat: self.players[players[seat]]["name"]
+            caption = None
             if t == "blinds":
                 for key, s, a in (("sb", msg["sb_seat"], msg["sb"]), ("bb", msg["bb_seat"], msg["bb"])):
                     T[key] = s
                     T["stacks"][s] -= a; T["bets"][s] += a; T["pot"] += a
+                caption = f"{name(msg['sb_seat'])} posts {msg['sb']}, {name(msg['bb_seat'])} posts {msg['bb']}"
             elif t == "action":
                 s, kind, amt = msg["seat"], msg["action"], msg["amount"]
                 if kind == "fold":
@@ -289,12 +433,14 @@ class Room:
                     label += " (all-in)"
                 T["pot"] = msg["pot"]
                 T["last"][s] = label
-                self.events.append(f"{name(s)} {label}")
+                caption = f"{name(s)} {label}"
+                self.events.append(caption)
             elif t == "street":
                 T["street"] = msg["street"]; T["board"] = msg["board"]
                 T["bets"] = [0] * self.n
                 T["last"] = {s: v for s, v in T["last"].items() if v.startswith("folds")}
-                self.events.append(f"{msg['street'].capitalize()}: {' '.join(msg['board'])}")
+                caption = f"{msg['street'].capitalize()}: {' '.join(msg['board'])}"
+                self.events.append(caption)
             elif t == "hand_end":
                 board = msg["board"]
                 shown = {}
@@ -303,27 +449,90 @@ class Room:
                     val = evaluate(parse_cards(hole + board)) if len(board) == 5 else None
                     shown[s] = {"cards": hole, "hand": hand_name(val) if val else ""}
                 winners = []
+                lines = []
+                # the engine splits a pot into one layer per bet level; merge layers won by the same player(s)
+                pots = []
                 for p in msg["pots"]:
-                    for w in p["winners"]:
-                        winners.append(w)
+                    if p["amount"] <= 0:
+                        continue
+                    if pots and pots[-1]["winners"] == p["winners"]:
+                        pots[-1] = {"amount": pots[-1]["amount"] + p["amount"], "winners": p["winners"]}
+                    else:
+                        pots.append(dict(p))
+                for i, p in enumerate(pots):
+                    ws = p["winners"]
+                    winners += ws
+                    what = "the pot" if len(pots) == 1 else ("the main pot" if i == 0 else f"side pot {i}")
+                    hands = {shown[w]["hand"] for w in ws if w in shown and shown[w]["hand"]}
+                    how = f" with {hands.pop()}" if len(hands) == 1 else ""
+                    if len(ws) == 1:
+                        lines.append(f"{name(ws[0])} wins {what} of {p['amount']}{how}")
+                    else:
+                        who = ", ".join(name(w) for w in ws[:-1]) + " and " + name(ws[-1])
+                        lines.append(f"{who} split {what} of {p['amount']}{how}")
+                self.events += lines
                 for s, d in enumerate(msg["deltas"]):
                     self.totals[players[s]] += d
-                won = {s: d for s, d in enumerate(msg["deltas"]) if d > 0}
-                for s, d in won.items():
-                    how = f" with {shown[s]['hand']}" if s in shown and shown[s]["hand"] else ""
-                    self.events.append(f"{name(s)} wins +{d}{how}")
+                    T["stacks"][s] = T["start"][s] + d   # after the payout
+                T["bets"] = [0] * self.n
                 T["board"] = board
                 self.last_result = {"deltas": msg["deltas"], "shown": shown, "winners": sorted(set(winners)),
-                                    "pots": msg["pots"]}
+                                    "pots": msg["pots"], "lines": lines}
+                if self.rec is not None:
+                    self._frame(" · ".join(lines), final=True)
+                    self.rec["lines"] = lines
+                    self.rec["deltas"] = {players[s]: d for s, d in enumerate(msg["deltas"])}
+                    self.rec["shown_pids"] = [players[s] for s in shown]
+                    self.history.append(self.rec)
+                    self.history = self.history[-300:]
+                    self.rec = None
                 self.events = self.events[-200:]
                 self.bump()
                 self._pause_between_hands()
                 return
+            if caption and self.rec is not None:
+                self._frame(caption)
             self.events = self.events[-200:]
             self.bump()
 
+    def _frame(self, caption, final=False):
+        T = self.table
+        seats = []
+        for seat, p_id in enumerate(T["players"]):
+            seats.append({"seat": seat, "pid": p_id, "pos": self.order.index(p_id), "name": self.players[p_id]["name"],
+                          "stack": T["stacks"][seat], "bet": T["bets"][seat], "folded": T["folded"][seat],
+                          "allin": T["allin"][seat], "last": T["last"].get(seat, ""), "button": seat == T["button"],
+                          "sb": seat == T["sb"], "bb": seat == T["bb"]})
+        f = {"seats": seats, "board": list(T["board"]), "pot": T["pot"], "caption": caption}
+        if final:
+            r = self.last_result
+            for e in seats:
+                e["result"] = r["deltas"][e["seat"]]
+                e["shown_hand"] = r["shown"].get(e["seat"], {}).get("hand")
+                e["bet"] = 0
+            f["final"] = True
+        self.rec["frames"].append(f)
+
+    def replay(self, pid, hand):
+        """One recorded hand for player `pid`: own cards, bots' cards, and other humans' cards only if shown."""
+        with self.lock:
+            rec = next((r for r in self.history if r["hand"] == hand), None)
+            if rec is None:
+                return None
+            holes = {}
+            for p_id, h in rec["holes"].items():
+                if p_id == pid or self.players[p_id]["kind"] == "bot" or p_id in rec["shown_pids"]:
+                    holes[p_id] = h
+            return {"hand": rec["hand"], "frames": rec["frames"], "holes": holes, "lines": rec["lines"],
+                    "n": self.n, "mode": self.mode, "my_pos": self.order.index(pid), "me": pid}
+
+    def hand_list(self, pid):
+        with self.lock:
+            return [{"hand": r["hand"], "lines": r["lines"], "delta": r["deltas"].get(pid)} for r in self.history]
+
     def _pause_between_hands(self):
-        if self.closed or not any(p["kind"] == "human" for p in self.players):
+        if self.closed or not any(p["kind"] == "human" and self.stacks[i] > 0
+                                  for i, p in enumerate(self.players)):
             return
         self.ack.clear()
         self.lock.release()
@@ -365,7 +574,20 @@ class Room:
                 my_turn = {k: v[k] for k in ("to_call", "min_raise_to", "max_raise_to", "can_raise", "pot")}
                 my_turn["my_bet"] = v["street_bets"][v["seat"]]
                 my_turn["stack"] = v["stacks"][v["seat"]]
-            board_scores = sorted(((self.totals[i], self.players[i]["name"], i) for i in range(self.n)), reverse=True)
+            ko = self.mode == "knockout"
+            if ko:
+                pos_of = {p_id: self.order.index(p_id) for p_id in range(self.n)}
+                for e in seats:
+                    e["pos"] = pos_of[e["pid"]]
+                in_hand = {e["pid"] for e in seats}
+                for p_id in range(self.n):
+                    if p_id not in in_hand:
+                        seats.append({"seat": None, "pid": p_id, "pos": pos_of[p_id], "name": self.players[p_id]["name"],
+                                      "kind": self.players[p_id]["kind"], "out": True,
+                                      "place": self.out_place.get(p_id), "stack": self.stacks[p_id]})
+            # standings: knockout = chips each player has left; tournament format (stacks reset every hand) = net won/lost
+            money = [self.stacks[i] if ko else self.totals[i] for i in range(self.n)]
+            board_scores = sorted(((money[i], self.players[i]["name"], i) for i in range(self.n)), reverse=True)
             return {
                 "room": self.id, "version": self.version, "status": self.status,
                 "hand": self.hand_no + 1, "num_hands": self.num_hands, "seats_n": self.n,
@@ -378,7 +600,16 @@ class Room:
                 "lobby": [{"pid": i, "name": p["name"], "kind": p["kind"], "joined": p.get("joined", True)}
                           for i, p in enumerate(self.players)],
                 "scores": [{"pid": i, "name": nm, "chips": c} for c, nm, i in board_scores],
+                "result_lines": self.last_result["lines"] if self.last_result else [],
+                "history_n": len(self.history),
                 "final": self.final,
+                "mode": self.mode,
+                "my_pos": self.order.index(pid),
+                "blinds": list(LEVELS[self.level]) if ko else [1, 2],
+                "next_level_in": (self.level_hands - (self.hand_no + 1) % self.level_hands)
+                                 if ko and self.level_hands and self.level < len(LEVELS) - 1 else None,
+                "start_stack": self.start_stack,
+                "my_place": self.out_place.get(pid),
             }
 
 
@@ -423,6 +654,14 @@ class Handler(BaseHTTPRequestHandler):
             if room is None or pid is None:
                 return self._json({"error": "unknown room or token"}, 404)
             return self._json(room.view(pid))
+        if u.path in ("/api/history", "/api/replay"):
+            room, pid = self._room(q)
+            if room is None or pid is None:
+                return self._json({"error": "unknown room or token"}, 404)
+            if u.path == "/api/history":
+                return self._json(room.hand_list(pid))
+            r = room.replay(pid, int((q.get("hand") or ["0"])[0] or 0))
+            return self._json(r if r else {"error": "no such hand"}, 200 if r else 404)
         if u.path == "/api/room_info":
             room = ROOMS.get((q.get("room") or [""])[0])
             if room is None:
@@ -455,7 +694,10 @@ class Handler(BaseHTTPRequestHandler):
             room = Room(seats, hands, lineup, humans, {0: str(b.get("name") or "You")[:20]},
                         bot_delay=max(0.0, min(3.0, float(b.get("bot_delay", 0.7)))),
                         turn_limit=max(0, min(600, int(b.get("turn_limit", 0)))),
-                        auto_next=max(0, min(60, int(b.get("auto_next", 4)))))
+                        auto_next=max(0, min(60, int(b.get("auto_next", 4)))),
+                        mode="knockout" if b.get("mode") == "knockout" else "tournament",
+                        start_stack=max(20, min(100000, int(b.get("start_stack", 200)))),
+                        level_hands=max(0, min(1000, int(b.get("level_hands", 10)))))
             ROOMS[room.id] = room
             if humans == 1:
                 room.start()

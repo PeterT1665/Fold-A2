@@ -104,6 +104,9 @@ async function createRoom() {
       seats: +segVal("seats"),
       humans: multi ? +segVal("humans") : 1,
       hands: +segVal("hands"),
+      mode: segVal("gametype"),
+      start_stack: +segVal("stack"),
+      level_hands: +segVal("levels"),
       bot_delay: +segVal("speed"),
       auto_next: multi ? 6 : 4,
       turn_limit: multi ? 45 : 0,
@@ -173,36 +176,34 @@ async function poll() {
 // ------------------------------------------------------------ table
 function esc(t) { return String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
-function renderGame(s) {
-  $("hand-no").textContent = s.status === "finished" ? "Finished" : `Hand ${Math.max(s.hand, 1)} / ${s.num_hands}`;
-  $("share-btn").classList.toggle("hidden", !s.lobby.some((p) => p.kind === "human" && p.pid !== s.me));
-  // board + pot
-  $("board").innerHTML = "";
-  for (const c of s.board) $("board").appendChild(cardEl(c));
-  $("pot").textContent = s.pot ? `Pot ${s.pot}` : "";
-  // seats
-  const layer = $("seats-layer");
+// Draws seats around the table. model: {seats, n, mine, ko, me, cardsFor(p), live}
+function drawSeats(layer, m) {
   layer.innerHTML = "";
-  const n = s.table.length;
-  const mine = s.my_seat ?? 0;
-  for (const p of s.table) {
-    const i = (p.seat - mine + n) % n;
-    const th = Math.PI / 2 + (i * 2 * Math.PI) / n;
-    const narrow = window.innerWidth < 600;
+  const narrow = window.innerWidth < 600;
+  for (const p of m.seats) {
+    const i = ((m.ko ? p.pos : p.seat) - m.mine + m.n) % m.n;
+    const th = Math.PI / 2 + (i * 2 * Math.PI) / m.n;
     const x = 50 + (narrow ? 38 : 43) * Math.cos(th), y = 50 + (narrow ? 43 : 41) * Math.sin(th);
     const el = document.createElement("div");
-    el.className = "seat" + (p.pid === s.me ? " me" : "") + (p.acting ? " acting" : "") + (p.folded ? " folded" : "");
     el.style.left = x + "%"; el.style.top = y + "%";
+    if (p.out) {
+      el.className = "seat out" + (p.pid === m.me ? " me" : "");
+      el.innerHTML = `<div class="plate"><div class="name">${esc(p.name)}</div><div class="stack">Out · 0</div></div>`;
+      layer.appendChild(el);
+      continue;
+    }
+    el.className = "seat" + (p.pid === m.me ? " me" : "") + (p.acting ? " acting" : "") + (p.folded ? " folded" : "");
     const cards = document.createElement("div");
     cards.className = "cards";
-    if (p.cards) for (const c of p.cards) cards.appendChild(cardEl(c, p.pid !== s.me));
-    else if (p.has_cards && s.hand > 0) { cards.appendChild(cardEl(null, true)); cards.appendChild(cardEl(null, true)); }
+    const known = m.cardsFor(p);
+    if (known) for (const c of known) cards.appendChild(cardEl(c, p.pid !== m.me));
+    else if (!p.folded && m.live) { cards.appendChild(cardEl(null, true)); cards.appendChild(cardEl(null, true)); }
     const badge = p.button ? '<span class="badge d">D</span>' : p.sb ? '<span class="badge sb">SB</span>' : p.bb ? '<span class="badge bb">BB</span>' : "";
     const delta = p.result != null && p.result !== 0
       ? `<div class="delta ${p.result > 0 ? "pos" : "neg"}">${p.result > 0 ? "+" : ""}${p.result}</div>` : "";
     el.innerHTML = `<div class="plate">${badge}<div class="name">${esc(p.name)}</div>
-      <div class="stack">${p.allin ? "All-in" : p.stack}</div></div>
-      <div class="last">${esc(p.last)}</div>${delta}${p.shown_hand ? `<div class="handname">${esc(p.shown_hand)}</div>` : ""}`;
+      <div class="stack">${p.allin && p.result == null ? "All-in" : p.stack}</div></div>
+      <div class="last">${esc(p.last || "")}</div>${delta}${p.shown_hand ? `<div class="handname">${esc(p.shown_hand)}</div>` : ""}`;
     el.prepend(cards);
     layer.appendChild(el);
     if (p.bet > 0) {
@@ -213,14 +214,33 @@ function renderGame(s) {
       layer.appendChild(b);
     }
   }
-  // banner
-  const winners = s.table.filter((p) => p.result > 0);
-  $("banner").textContent = s.between_hands && winners.length
-    ? winners.map((w) => `${w.name} wins ${w.result}${w.shown_hand ? " with " + w.shown_hand : ""}`).join(" · ") : "";
+}
+function drawBoard(boardEl, potEl, board, pot) {
+  boardEl.innerHTML = "";
+  for (const c of board) boardEl.appendChild(cardEl(c));
+  potEl.textContent = pot ? `Pot ${pot}` : "";
+}
+
+function renderGame(s) {
+  const ko = s.mode === "knockout";
+  $("hand-no").textContent = s.status === "finished" ? "Finished"
+    : ko ? `Hand ${Math.max(s.hand, 1)} · Blinds ${s.blinds[0]}/${s.blinds[1]}${s.next_level_in ? ` · up in ${s.next_level_in}` : ""}`
+    : `Hand ${Math.max(s.hand, 1)} / ${s.num_hands}`;
+  $("share-btn").classList.toggle("hidden", !s.lobby.some((p) => p.kind === "human" && p.pid !== s.me));
+  $("replay-btn").classList.toggle("hidden", !s.history_n);
+  drawBoard($("board"), $("pot"), s.board, s.pot);
+  // knockout: everyone keeps a fixed place (pos) and the dealer button moves; tournament: seats rotate
+  drawSeats($("seats-layer"), {
+    seats: s.table, n: ko ? s.seats_n : s.table.length, mine: ko ? s.my_pos : (s.my_seat ?? 0), ko, me: s.me,
+    cardsFor: (p) => p.cards, live: s.hand > 0,
+  });
+  $("banner").textContent = s.between_hands ? (s.result_lines || []).join(" · ") : "";
   renderControls(s);
-  // standings + log
+  // standings: chips each player has left
+  const fmt = (c) => ko ? `${c}` : `${c > 0 ? "+" : ""}${c}`;
   $("scores").innerHTML = s.scores.map((r) =>
-    `<li class="${r.pid === s.me ? "me" : ""}"><span>${esc(r.name)}</span><span class="${r.chips > 0 ? "pos" : r.chips < 0 ? "neg" : ""}">${r.chips > 0 ? "+" : ""}${r.chips}</span></li>`).join("");
+    `<li class="${r.pid === s.me ? "me" : ""}${ko && r.chips <= 0 ? " out" : ""}"><span>${esc(r.name)}</span><span class="${
+      ko ? "" : r.chips > 0 ? "pos" : r.chips < 0 ? "neg" : ""}">${fmt(r.chips)}</span></li>`).join("");
   const log = $("log");
   const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
   log.innerHTML = s.log.map((l) => `<div class="${l.startsWith("—") ? "hd" : ""}">${esc(l)}</div>`).join("");
@@ -228,10 +248,59 @@ function renderGame(s) {
   // game over
   if (s.status === "finished" || s.status === "error") {
     $("final").classList.remove("hidden");
-    $("final-list").innerHTML = s.scores.map((r, k) =>
-      `<li class="${r.pid === s.me ? "me" : ""}"><span>${esc(r.name)}</span><span>${r.chips > 0 ? "+" : ""}${r.chips}</span></li>`).join("")
+    const top = s.scores[0];
+    $("final").querySelector("h2").textContent = top && top.pid === s.me ? "You finish on top! 🏆" : `Game over · ${top ? top.name : ""} finishes on top`;
+    $("final-list").innerHTML = s.scores.map((r) =>
+      `<li class="${r.pid === s.me ? "me" : ""}"><span>${esc(r.name)}</span><span>${fmt(r.chips)} chips</span></li>`).join("")
       + (s.status === "error" ? `<p class="err">${esc(s.log[s.log.length - 1] || "")}</p>` : "");
   }
+}
+
+// ------------------------------------------------------------ replays
+let rp = null;  // {data, i, timer}
+async function openReplays() {
+  $("replay").classList.remove("hidden");
+  const list = await api(`/api/history?room=${encodeURIComponent(session.room)}&token=${encodeURIComponent(session.token)}`);
+  $("rp-list").innerHTML = list.slice().reverse().map((h) =>
+    `<li data-h="${h.hand}"><b>Hand ${h.hand}</b><span class="${h.delta > 0 ? "pos" : h.delta < 0 ? "neg" : ""}">${
+      h.delta == null ? "" : (h.delta > 0 ? "+" : "") + h.delta}</span><small>${esc(h.lines.join(" · "))}</small></li>`).join("")
+    || "<li class=\"muted\">No finished hands yet.</li>";
+  if (list.length && !rp) loadReplay(list[list.length - 1].hand);
+}
+async function loadReplay(hand) {
+  stopReplay();
+  const d = await api(`/api/replay?room=${encodeURIComponent(session.room)}&token=${encodeURIComponent(session.token)}&hand=${hand}`);
+  rp = { data: d, i: 0, timer: null };
+  for (const li of $("rp-list").querySelectorAll("li")) li.classList.toggle("on", +li.dataset.h === hand);
+  drawReplay();
+}
+function drawReplay() {
+  if (!rp) return;
+  const d = rp.data, f = d.frames[rp.i];
+  const ko = d.mode === "knockout";
+  drawBoard($("rp-board"), $("rp-pot"), f.board, f.pot);
+  drawSeats($("rp-seats"), {
+    seats: f.seats, n: ko ? d.n : f.seats.length, mine: ko ? d.my_pos : (f.seats.find((p) => p.pid === d.me) || { seat: 0 }).seat,
+    ko, me: d.me, cardsFor: (p) => d.holes[p.pid] || null, live: true,
+  });
+  $("rp-caption").textContent = f.caption || "";
+  $("rp-title").textContent = `Hand ${d.hand} · step ${rp.i + 1} / ${d.frames.length}`;
+}
+function stepReplay(k) {
+  if (!rp) return;
+  rp.i = Math.max(0, Math.min(rp.data.frames.length - 1, k));
+  drawReplay();
+}
+function stopReplay() { if (rp && rp.timer) { clearInterval(rp.timer); rp.timer = null; } $("rp-play").textContent = "▶ Play"; }
+function playReplay() {
+  if (!rp) return;
+  if (rp.timer) return stopReplay();
+  if (rp.i >= rp.data.frames.length - 1) rp.i = 0;
+  $("rp-play").textContent = "❚❚ Pause";
+  rp.timer = setInterval(() => {
+    if (rp.i >= rp.data.frames.length - 1) return stopReplay();
+    stepReplay(rp.i + 1);
+  }, 900);
 }
 
 function renderControls(s) {
@@ -240,7 +309,8 @@ function renderControls(s) {
   mc.classList.toggle("hidden", !t);
   nc.classList.toggle("hidden", !(s.between_hands && !t && s.status === "playing"));
   const acting = s.table.find((p) => p.acting);
-  $("wait-msg").textContent = t ? "" : s.between_hands ? "" : acting ? `${acting.name} is thinking…` : s.status === "playing" ? "Dealing…" : "";
+  $("wait-msg").textContent = t ? "" : s.my_place && s.status === "playing" ? "You're out of chips. Watching the rest of the game…"
+    : s.between_hands ? "" : acting ? `${acting.name} is thinking…` : s.status === "playing" ? "Dealing…" : "";
   if (!t) return;
   sending = false;
   for (const b of mc.querySelectorAll("button")) b.disabled = false;
@@ -256,6 +326,7 @@ function renderControls(s) {
   sl.value = amt.value = def;
   updateRaiseLabel();
 }
+function ordinal(n) { const v = n % 100; return n + (v >= 11 && v <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" }[n % 10] || "th")); }
 function clampRaise(t, v) { return Math.max(t.min_raise_to, Math.min(t.max_raise_to, Math.round(v))); }
 function updateRaiseLabel() {
   const t = state && state.my_turn; if (!t) return;
@@ -290,13 +361,30 @@ seg("seats", () => { renderHumans(); renderCustom(); });
 seg("mode", (v) => { $("humans-field").classList.toggle("hidden", v !== "multi"); renderHumans(); renderCustom(); });
 seg("humans", renderCustom);
 seg("preset", renderCustom);
-seg("hands"); seg("speed");
+seg("hands"); seg("speed"); seg("stack"); seg("levels");
+seg("gametype", (v) => {
+  $("ko-opts").classList.toggle("hidden", v !== "knockout");
+  $("hands-field").classList.toggle("hidden", v === "knockout");
+  $("gametype-help").textContent = v === "knockout"
+    ? "Stacks carry over, the button and blinds move round the table, blinds go up over time, and busted players are out. Last player standing wins."
+    : "Same as the MAC tournament: 200-chip stacks reset every hand, blinds 1/2, everyone moves one seat each hand, most chips after N hands wins.";
+});
+$("hands-field").classList.add("hidden");
 $("go").onclick = createRoom;
 $("start").onclick = () => api("/api/start", session).catch((e) => alert(e.message));
 $("copy").onclick = () => { $("share").select(); navigator.clipboard && navigator.clipboard.writeText($("share").value); };
 $("share-btn").onclick = () => { const u = location.origin + "/?room=" + session.room; navigator.clipboard && navigator.clipboard.writeText(u); alert("Invite link copied:\n" + u); };
 $("leave").onclick = async () => { if (!confirm("Leave this table? The game ends for everyone.")) return; try { await api("/api/leave", session); } catch (e) {} goHome(); };
 $("again").onclick = goHome;
+$("replay-btn").onclick = openReplays;
+$("final-replay").onclick = () => { $("final").classList.add("hidden"); openReplays(); };
+$("rp-close").onclick = () => { stopReplay(); rp = null; $("replay").classList.add("hidden"); if (state && state.status === "finished") $("final").classList.remove("hidden"); };
+$("rp-list").onclick = (e) => { const li = e.target.closest("li[data-h]"); if (li) loadReplay(+li.dataset.h); };
+$("rp-first").onclick = () => { stopReplay(); stepReplay(0); };
+$("rp-prev").onclick = () => { stopReplay(); stepReplay(rp.i - 1); };
+$("rp-next").onclick = () => { stopReplay(); stepReplay(rp.i + 1); };
+$("rp-last").onclick = () => { stopReplay(); stepReplay(1e9); };
+$("rp-play").onclick = playReplay;
 $("b-fold").onclick = () => act("fold");
 $("b-call").onclick = () => act(state.my_turn.to_call === 0 ? "check" : "call");
 $("b-raise").onclick = () => act("raise", +$("r-amt").value);
@@ -311,6 +399,13 @@ document.querySelector(".presets").onclick = (e) => {
 };
 document.addEventListener("keydown", (e) => {
   if (e.target.tagName === "INPUT" && e.target.type !== "range") return;
+  if (!$("replay").classList.contains("hidden")) {
+    if (e.key === "ArrowRight") { stopReplay(); stepReplay(rp.i + 1); }
+    else if (e.key === "ArrowLeft") { stopReplay(); stepReplay(rp.i - 1); }
+    else if (e.key === " ") { e.preventDefault(); playReplay(); }
+    else if (e.key === "Escape") $("rp-close").click();
+    return;
+  }
   if (!state || $("game").classList.contains("hidden")) return;
   const t = state.my_turn, k = e.key.toLowerCase();
   if (t) {

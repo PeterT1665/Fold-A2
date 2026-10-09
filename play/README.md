@@ -8,8 +8,16 @@ python play/server.py                          # open http://localhost:8000
 python play/server.py --host 0.0.0.0           # friends on the same Wi-Fi can join
 ```
 
-- **Tables of 5 to 8**, with the same rules as the MAC tournament (official `macpoker` engine): 200-chip
-  stacks reset every hand, blinds 1/2, and everyone moves one seat each hand.
+- **Two game types**, both on the official `macpoker` hand engine, tables of 5 to 8:
+  - **Knockout (normal poker)**: stacks carry over (200 / 500 / 1000 to start), players keep their seats and
+    the dealer button and blinds move round the table, blinds go up every 10 or 20 hands (or never), busted
+    players are out, and the last player with chips wins.
+  - **MAC tournament format**: 200-chip stacks reset every hand, blinds 1/2, everyone moves one seat each hand.
+- **Standings** show the chips each player has left (knockout), or net chips won or lost (MAC format).
+- **Rewatch hands**: step through any finished hand action by action (or press Play). You see your own
+  cards, every bot's cards, and other people's cards only if they were shown at showdown.
+- Split pots are reported as splits ("A and B split the pot of 120"), with side pots named only when
+  different players win them.
 - **Opponents:** Fold-A2 v4.2 (our tournament entry), v3.5, the house bots, and copies of real ladder bots.
   The copies only appear if `opponents/clone_data.json` exists; rebuild it with `python tools/v4/fit.py`.
 - **Multiplayer:** choose *Multiplayer (host)* and pick how many human seats, then share the invite link.
