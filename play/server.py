@@ -36,6 +36,9 @@ from macpoker.evaluator import evaluate, hand_name
 from macpoker.match import MatchConfig, MatchRunner
 from macpoker.transport import BotDied, InProcessTransport, ProtocolError, Transport
 
+MAX_ROOMS = 100          # live tables the server will host at once (--max-rooms)
+IDLE_SECONDS = 600       # a table nobody has talked to for this long is closed (--idle-minutes)
+
 # knockout mode: blinds by level (raised every N hands if enabled)
 LEVELS = [(1, 2), (2, 4), (3, 6), (5, 10), (10, 20), (15, 30), (25, 50), (50, 100), (75, 150), (100, 200),
           (150, 300), (250, 500), (400, 800), (600, 1200), (1000, 2000), (1500, 3000), (2500, 5000)]
@@ -94,6 +97,8 @@ class HumanTransport(Transport):
             self.room.observe(self.pid, msg)
 
     def act(self, view, timeout_ms):
+        if self.room.closed:
+            raise BotDied("room closed")
         with self.cv:
             self.pending, self.reply = view, None
             self.room.set_actor(view["seat"], view)
@@ -104,6 +109,9 @@ class HumanTransport(Transport):
                 if left is not None and left <= 0:
                     break
                 self.cv.wait(timeout=1 if left is None else min(1, left))
+            if self.room.closed and self.reply is None:
+                self.pending = None
+                raise BotDied("room closed")
             a = self.reply or (Action.check() if view["to_call"] == 0 else Action.fold())
             self.pending = None
             self.room.set_actor(None, None)
@@ -131,6 +139,8 @@ class PacedBot(Transport):
         self.inner.send(msg)
 
     def act(self, view, timeout_ms):
+        if self.room.closed:
+            raise BotDied("room closed")
         self.room.set_actor(view["seat"], None)
         t0 = time.time()
         a, ms = self.inner.act(view, timeout_ms)
@@ -186,7 +196,8 @@ class KnockoutSink(Sink):
 class Room:
     def __init__(self, seats, hands, lineup, humans, names, bot_delay, turn_limit, auto_next,
                  mode="tournament", start_stack=200, level_hands=10):
-        self.id = secrets.token_urlsafe(5)
+        self.id = secrets.token_urlsafe(5)          # public: appears in the invite link, only names the room
+        self.secret = secrets.token_hex(16)         # private: seeds bots and (tournament format) the decks; never sent to a client
         self.mode = mode
         self.start_stack = start_stack
         self.level_hands = level_hands      # 0 = blinds never go up
@@ -224,6 +235,7 @@ class Room:
         self.human_tx = {}
         self.ack = threading.Event()
         self.final = None
+        self.last_seen = time.time()   # updated whenever a client talks to the room; the janitor closes idle rooms
         self.history = []       # finished hands for the replay viewer
         self.rec = None         # hand being recorded
 
@@ -272,11 +284,11 @@ class Room:
                 t = HumanTransport(self, pid)
                 self.human_tx[pid] = t
             else:
-                t = PacedBot(self, pid, CATALOG[p["bot"]][1](f"{self.id}:{pid}"))
+                t = PacedBot(self, pid, CATALOG[p["bot"]][1](f"{self.secret}:{pid}"))
             transports.append(t)
         if self.mode == "knockout":
             return self._run_knockout(transports)
-        cfg = MatchConfig(seats=self.n, deals=self.num_hands, seed=self.id, base_time_ms=10**12, increment_ms=0)
+        cfg = MatchConfig(seats=self.n, deals=self.num_hands, seed=self.secret, base_time_ms=10**12, increment_ms=0)
         try:
             res = MatchRunner(cfg, transports).run()
             with self.lock:
@@ -290,7 +302,7 @@ class Room:
                 self.bump()
 
     def _run_knockout(self, tx):
-        rng = random.Random(self.id)
+        rng = random.SystemRandom()                 # OS randomness: the deck can't be predicted from anything a player sees
         rng.shuffle(self.order)
         try:
             for t in tx:
@@ -633,18 +645,48 @@ class Handler(BaseHTTPRequestHandler):
     def _body(self):
         n = int(self.headers.get("Content-Length") or 0)
         if n > 100_000:
+            raise ValueError("body too large")
+        raw = self.rfile.read(n) if n else b""
+        if not raw:
             return {}
+        j = json.loads(raw)                      # invalid JSON raises ValueError -> 400
+        if not isinstance(j, dict):
+            raise ValueError("body must be a JSON object")
+        return j
+
+    def _guard(self, fn):
+        """Always answer: bad input -> 400, anything unexpected -> 500 (logged), never a dropped connection."""
         try:
-            return json.loads(self.rfile.read(n) or b"{}")
-        except json.JSONDecodeError:
-            return {}
+            fn()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except (TypeError, ValueError, AttributeError, KeyError, OverflowError):
+            self._fail(400, "bad request")
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            self._fail(500, "server error")
+
+    def _fail(self, code, msg):
+        try:
+            self._json({"error": msg}, code)
+        except Exception:
+            pass
+
+    def do_GET(self):
+        self._guard(self._get)
+
+    def do_POST(self):
+        self._guard(self._post)
 
     def _room(self, q):
         room = ROOMS.get((q.get("room") or [""])[0])
         pid = room.token_pid((q.get("token") or [""])[0]) if room else None
+        if room is not None and pid is not None:
+            room.last_seen = time.time()
         return room, pid
 
-    def do_GET(self):
+    def _get(self):
         u = urlparse(self.path)
         q = parse_qs(u.query)
         if u.path == "/api/bots":
@@ -666,6 +708,7 @@ class Handler(BaseHTTPRequestHandler):
             room = ROOMS.get((q.get("room") or [""])[0])
             if room is None:
                 return self._json({"error": "unknown room"}, 404)
+            room.last_seen = time.time()
             with room.lock:
                 return self._json({"room": room.id, "status": room.status, "seats_n": room.n,
                                    "open": sum(1 for p in room.players if p["kind"] == "human" and not p["joined"])})
@@ -683,10 +726,12 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def do_POST(self):
+    def _post(self):
         u = urlparse(self.path)
         b = self._body()
         if u.path == "/api/create":
+            if len(ROOMS) >= MAX_ROOMS:
+                return self._json({"error": "The server is full right now. Please try again in a few minutes."}, 503)
             seats = max(2, min(10, int(b.get("seats", 6))))
             humans = max(1, min(seats - 1, int(b.get("humans", 1))))
             hands = max(1, min(1000, int(b.get("hands", 50))))
@@ -706,6 +751,7 @@ class Handler(BaseHTTPRequestHandler):
             room = ROOMS.get(b.get("room", ""))
             if room is None:
                 return self._json({"error": "unknown room"}, 404)
+            room.last_seen = time.time()
             got = room.join(str(b.get("name") or ""))
             if got is None:
                 return self._json({"error": "room is full or already started"}, 409)
@@ -740,12 +786,32 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"error": "not found"}, 404)
 
 
+def janitor():
+    """Close tables nobody has talked to lately (closed tabs, abandoned games) so threads never pile up."""
+    interval = max(1.0, min(15.0, IDLE_SECONDS / 3))
+    while True:
+        time.sleep(interval)
+        now = time.time()
+        for rid, room in list(ROOMS.items()):
+            if now - room.last_seen > IDLE_SECONDS:
+                ROOMS.pop(rid, None)
+                room.close()
+                print(f"closed idle room {rid}", flush=True)
+
+
 def main():
+    global MAX_ROOMS, IDLE_SECONDS
     ap = argparse.ArgumentParser()
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8000)
+    ap.add_argument("--max-rooms", type=int, default=MAX_ROOMS, help="most tables hosted at once")
+    ap.add_argument("--idle-minutes", type=float, default=IDLE_SECONDS / 60, help="close a table nobody has touched for this long")
     a = ap.parse_args()
-    srv = ThreadingHTTPServer((a.host, a.port), Handler)
+    MAX_ROOMS, IDLE_SECONDS = max(1, a.max_rooms), max(1.0, a.idle_minutes * 60)
+    threading.Thread(target=janitor, daemon=True).start()
+    class Server(ThreadingHTTPServer):
+        request_queue_size = 256                 # default is 5: simultaneous visitors got "connection reset"
+    srv = Server((a.host, a.port), Handler)
     print(f"Fold A2 poker room on http://{'localhost' if a.host in ('127.0.0.1', '0.0.0.0') else a.host}:{a.port}")
     print(f"{len(CATALOG)} opponents available. Ctrl+C to stop.")
     try:

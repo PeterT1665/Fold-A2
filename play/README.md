@@ -32,3 +32,34 @@ How it works: `server.py` runs each table's game in a thread. Bots are in-proces
 think pause, and each human seat is a transport that waits for that player's click. The browser polls
 `/api/state` about three times a second. It uses only the standard library, so moving to WebSockets or a
 hosted server later only changes the transport layer, not the game.
+
+## Running it for other people
+
+```bash
+python play/server.py --host 0.0.0.0 --port 8000 --max-rooms 100 --idle-minutes 10
+```
+
+- `--max-rooms`: most tables hosted at once. Beyond that, "create" answers 503 and the page shows
+  "The server is full right now."
+- `--idle-minutes`: a table nobody has talked to for this long (closed tab, abandoned game) is closed, which
+  also stops its game thread. Without this, every abandoned table kept a thread alive forever.
+- Shuffles use the operating system's randomness. The seed that drives bots is private to the server and is never
+  sent to a browser. Names are escaped before display.
+- Not included: HTTPS (use a host or reverse proxy that provides it), per-visitor rate limiting, accounts, or
+  keeping games across a restart (tables live in memory, so run a single instance).
+- The server needs the `macpoker` SDK (`pip install https://poker.monashcoding.com/dl/macpoker-0.1.0-py3-none-any.whl`).
+  Check that link will stay up, and the SDK's licence, before depending on it for a public deployment.
+- Opponent copies of real ladder bots only appear if `opponents/clone_data.json` exists. It is built from
+  scraped games, is not in git, and so will not be on a deployment unless you add it.
+
+## Tests
+
+```bash
+python play/tests/privacy.py                       # in-process, no server needed
+python play/tests/hardening.py                     # starts its own small server; ~1 minute
+python play/server.py --port 8000 &                # then, against a running server:
+python play/tests/suite.py http://127.0.0.1:8000   # 73 end-to-end checks; ~4 minutes
+python play/tests/attack.py http://127.0.0.1:8000  # must print 0/18 for both modes
+```
+
+`suite.py` and `attack.py` accept any base URL, so they can smoke-test a deployment (they create many throwaway tables).
