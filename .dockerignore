@@ -1,0 +1,13 @@
+.git
+.gitignore
+games
+dist
+docs
+tools
+tests
+opponents
+play/tests
+**/__pycache__
+**/*.pyc
+*.zip
+.DS_Store

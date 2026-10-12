@@ -35,6 +35,9 @@ hosted server later only changes the transport layer, not the game.
 
 ## Running it for other people
 
+For hosting on the internet (Render, Fly.io), the Docker image, capacity numbers and a pre-launch checklist, see
+[DEPLOY.md](DEPLOY.md).
+
 ```bash
 python play/server.py --host 0.0.0.0 --port 8000 --max-rooms 100 --idle-minutes 10
 ```
@@ -47,8 +50,8 @@ python play/server.py --host 0.0.0.0 --port 8000 --max-rooms 100 --idle-minutes 
   sent to a browser. Names are escaped before display.
 - Not included: HTTPS (use a host or reverse proxy that provides it), per-visitor rate limiting, accounts, or
   keeping games across a restart (tables live in memory, so run a single instance).
-- The server needs the `macpoker` SDK (`pip install https://poker.monashcoding.com/dl/macpoker-0.1.0-py3-none-any.whl`).
-  Check that link will stay up, and the SDK's licence, before depending on it for a public deployment.
+- The server needs the `macpoker` SDK. It is vendored in `play/vendor/` (the package metadata declares MIT), so builds
+  do not depend on the organisers' download link.
 - Opponent copies of real ladder bots only appear if `opponents/clone_data.json` exists. It is built from
   scraped games, is not in git, and so will not be on a deployment unless you add it.
 

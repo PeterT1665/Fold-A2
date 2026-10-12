@@ -15,6 +15,7 @@ import importlib.util
 import json
 import os
 import random
+import re
 import secrets
 import sys
 import threading
@@ -633,9 +634,27 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
+    def _public_url(self):
+        """Absolute site URL for link-preview tags: env PUBLIC_URL if set, else built from the request headers."""
+        import html
+        env = os.environ.get("PUBLIC_URL", "").strip().rstrip("/")
+        if env:
+            return html.escape(env, quote=True)
+        host = self.headers.get("Host", "")
+        proto = (self.headers.get("X-Forwarded-Proto") or "http").split(",")[0].strip()
+        if proto not in ("http", "https") or not re.fullmatch(r"[A-Za-z0-9.\-:\[\]]{1,255}", host):
+            return ""
+        return f"{proto}://{host}"
+
+    def _hardening(self):
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+
     def _json(self, obj, code=200):
         body = json.dumps(obj).encode()
         self.send_response(code)
+        self._hardening()
         self.send_header("Content-Type", "application/json")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
@@ -676,6 +695,29 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self._guard(self._get)
 
+    def do_HEAD(self):                        # same headers as GET, no body (uptime monitors, link-preview crawlers)
+        real = self.wfile
+
+        class HeadOnly:
+            done = False                      # becomes True once the headers are out; the body is then discarded
+            def write(inner, b):
+                return len(b) if inner.done else real.write(b)
+            def flush(inner):
+                real.flush()
+        w = HeadOnly()
+        self.wfile = w
+        end = self.end_headers
+
+        def end_headers():
+            end()
+            w.done = True
+        self.end_headers = end_headers
+        try:
+            self._guard(self._get)
+        finally:
+            self.wfile = real
+            del self.end_headers
+
     def do_POST(self):
         self._guard(self._post)
 
@@ -689,6 +731,14 @@ class Handler(BaseHTTPRequestHandler):
     def _get(self):
         u = urlparse(self.path)
         q = parse_qs(u.query)
+        if u.path == "/healthz":          # for hosting platforms' health checks
+            self.send_response(200)
+            self._hardening()
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            self.wfile.write(b"ok")
+            return
         if u.path == "/api/bots":
             return self._json([{"id": k, "label": v[0]} for k, v in CATALOG.items()])
         if u.path == "/api/state":
@@ -717,11 +767,14 @@ class Handler(BaseHTTPRequestHandler):
         if not full.startswith(STATIC) or not os.path.isfile(full):
             self.send_error(404)
             return
-        ctype = {"html": "text/html", "js": "text/javascript", "css": "text/css", "svg": "image/svg+xml"}.get(
+        ctype = {"html": "text/html", "js": "text/javascript", "css": "text/css", "svg": "image/svg+xml", "png": "image/png"}.get(
             full.rsplit(".", 1)[-1], "application/octet-stream")
         data = open(full, "rb").read()
+        if path == "index.html":
+            data = data.replace(b"__PUBLIC_URL__", self._public_url().encode())
         self.send_response(200)
-        self.send_header("Content-Type", ctype + "; charset=utf-8")
+        self._hardening()
+        self.send_header("Content-Type", ctype + ("; charset=utf-8" if ctype.startswith("text/") or "javascript" in ctype else ""))
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
@@ -802,10 +855,12 @@ def janitor():
 def main():
     global MAX_ROOMS, IDLE_SECONDS
     ap = argparse.ArgumentParser()
-    ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--port", type=int, default=8000)
-    ap.add_argument("--max-rooms", type=int, default=MAX_ROOMS, help="most tables hosted at once")
-    ap.add_argument("--idle-minutes", type=float, default=IDLE_SECONDS / 60, help="close a table nobody has touched for this long")
+    env = os.environ.get
+    ap.add_argument("--host", default=env("HOST", "127.0.0.1"))
+    ap.add_argument("--port", type=int, default=int(env("PORT", 8000)), help="hosting platforms set PORT")
+    ap.add_argument("--max-rooms", type=int, default=int(env("MAX_ROOMS", MAX_ROOMS)), help="most tables hosted at once (env MAX_ROOMS)")
+    ap.add_argument("--idle-minutes", type=float, default=float(env("IDLE_MINUTES", IDLE_SECONDS / 60)),
+                    help="close a table nobody has touched for this long (env IDLE_MINUTES)")
     a = ap.parse_args()
     MAX_ROOMS, IDLE_SECONDS = max(1, a.max_rooms), max(1.0, a.idle_minutes * 60)
     threading.Thread(target=janitor, daemon=True).start()
