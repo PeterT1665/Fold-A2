@@ -155,7 +155,7 @@ print("== 4. eight rooms at once (cross-talk and chip conservation)")
 outs = {}
 def worker(i):
     mode = "knockout" if i % 2 else "tournament"
-    lineup = random.Random(i).sample(["house:call", "house:random", "house:allin", "clone:yep", "clone:catherine", "v4", "v35"], 5)
+    lineup = random.Random(i).sample(["house:call", "house:random", "house:allin", "house:checkfold", "v4", "v35"], 5)
     kw = {"hands": 40} if mode == "tournament" else {"start_stack": 400, "level_hands": 4}
     s = create(name=f"P{i}", seats=6, mode=mode, bot_delay=0, auto_next=1, lineup=lineup, **kw)
     last = drive([s], ["rand"], seed=i, timeout=500)

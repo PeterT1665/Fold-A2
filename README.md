@@ -14,7 +14,6 @@ You need Python 3.10 or newer.
 ```bash
 git clone https://github.com/PeterT1665/Fold-A2.git
 cd Fold-A2
-git checkout v4-fresh
 
 python3 -m venv .venv
 source .venv/bin/activate            # on Windows: .venv\Scripts\activate
