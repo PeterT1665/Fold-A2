@@ -15,15 +15,21 @@ Python 3.12, the vendored SDK, the web server, our two bots and the house bots. 
 
 ### Option A: Render (simplest)
 
-1. Push the repo to GitHub (already on `v4-fresh`).
-2. Render dashboard: **New → Web Service**, connect the repo, choose the branch. It should detect the Dockerfile
-   (pick **Docker** as the runtime if asked).
-3. Health check path: `/healthz`.
-4. Instance: at least 0.5 CPU and 512 MB (that is what the numbers below were measured on; check the current plans
-   and prices). A free instance that sleeps when idle makes the first visitor wait for a cold start, which is a poor
-   first impression for a post, and its CPU may be smaller than the test box, so lower `MAX_ROOMS` to match.
-5. Environment variables are optional (see below). Keep it at one instance and leave autoscaling off.
-6. Open the URL it gives you, then run the tests against it (below).
+1. The code must be on GitHub: branch `v4-fresh` of `PeterT1665/Fold-A2` (already pushed).
+2. Render dashboard: **New → Web Service**, connect your GitHub account, pick that repository and the `v4-fresh`
+   branch. Set the language/runtime to **Docker** (it finds the `Dockerfile` in the repo root).
+3. Instance type: Render's free instance sleeps after 15 minutes without traffic and takes about a minute to wake,
+   and gets 750 free hours a month, so the first visitor after a quiet spell waits. Its CPU and RAM are not stated
+   in Render's docs; the numbers below were measured on 0.5 CPU / 512 MB, so pick a paid instance at least that
+   large for the post, or lower `MAX_ROOMS` if you use something smaller.
+4. Under **Advanced**, set the health check path to `/healthz`. Keep one instance; no autoscaling.
+5. Create the service and wait for the first build (a few minutes). Render redeploys on every push to the linked
+   branch, and a redeploy ends any games in progress.
+6. Open the `.onrender.com` address it shows, then run the tests against it (below).
+
+The container listens on port 10000, Render's default for web services, and on whatever `PORT` the platform sets.
+To try the container on your own machine first: `docker build -t fold-a2-poker . && docker run -p 8000:10000
+fold-a2-poker`, then open http://localhost:8000.
 
 ### Option B: Fly.io
 
@@ -34,7 +40,7 @@ Python 3.12, the vendored SDK, the web server, our two bots and the house bots. 
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `PORT` | 8000 | The platform normally sets this itself |
+| `PORT` | 10000 (image) / 8000 (running `server.py` directly) | The platform normally sets this itself |
 | `MAX_ROOMS` | 40 | Most tables hosted at once; beyond this, "create" answers 503 and the page shows "The server is full right now" |
 | `IDLE_MINUTES` | 5 | A table nobody has talked to for this long is closed and its thread freed |
 | `PUBLIC_URL` | (auto) | Your site's address, used for the link-preview image. Normally detected from the request headers behind the platform's HTTPS proxy; set it if the preview shows a wrong or relative address |

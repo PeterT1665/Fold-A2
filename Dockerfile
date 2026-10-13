@@ -16,10 +16,11 @@ COPY macpoker-scaffold ./macpoker-scaffold
 RUN useradd --create-home app && chown -R app /app
 USER app
 
-# hosting platforms inject PORT; override these from the platform's environment settings
-ENV HOST=0.0.0.0 PORT=8000 MAX_ROOMS=40 IDLE_MINUTES=5
-EXPOSE 8000
+# 10000 is Render's default web-service port; platforms that inject their own PORT override it at start-up
+# (override the others from the platform's environment settings)
+ENV HOST=0.0.0.0 PORT=10000 MAX_ROOMS=40 IDLE_MINUTES=5
+EXPOSE 10000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
-  CMD python -c "import os,urllib.request;urllib.request.urlopen('http://127.0.0.1:%s/healthz' % os.environ.get('PORT','8000'), timeout=2)" || exit 1
+  CMD python -c "import os,urllib.request;urllib.request.urlopen('http://127.0.0.1:%s/healthz' % os.environ.get('PORT','10000'), timeout=2)" || exit 1
 
 CMD ["python", "play/server.py"]
