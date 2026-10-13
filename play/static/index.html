@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fold A2 Poker Room</title>
+<meta name="description" content="Play no-limit Texas hold'em against the poker bot we built for the MAC Poker Bot Hackathon. Solo or with friends, 5 to 8 players, knockout or tournament format.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Fold A2 Poker Room">
+<meta property="og:title" content="Play poker against our hackathon bot">
+<meta property="og:description" content="No-limit Texas hold'em against the bot we built for the MAC Poker Bot Hackathon. Solo or with friends, 5 to 8 players. Rewatch every hand.">
+<meta property="og:url" content="__PUBLIC_URL__/">
+<meta property="og:image" content="__PUBLIC_URL__/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2318201d'/%3E%3Ctext x='32' y='46' font-size='40' text-anchor='middle' fill='%23f2c14e'%3E%E2%99%A0%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- setup -->
+<section id="setup" class="screen">
+  <div class="panel setup-panel">
+    <h1>Fold A2 <span>Poker Room</span></h1>
+    <p class="sub">No-limit hold'em against our tournament bots. Same rules as the MAC tournament: 200-chip stacks reset every hand, blinds 1/2, everyone moves one seat each hand.</p>
+
+    <label class="field">Your name
+      <input id="name" maxlength="20" placeholder="You">
+    </label>
+
+    <div class="field">Game
+      <div class="seg" id="gametype">
+        <button data-v="knockout" class="on">Knockout (normal poker)</button><button data-v="tournament">MAC tournament format</button>
+      </div>
+      <small id="gametype-help">Stacks carry over, the button and blinds move round the table, blinds go up over time, and busted players are out. Last player standing wins.</small>
+    </div>
+
+    <div class="field">Players at the table
+      <div class="seg" id="seats">
+        <button data-v="5">5</button><button data-v="6" class="on">6</button><button data-v="7">7</button><button data-v="8">8</button>
+      </div>
+    </div>
+
+    <div class="field">Mode
+      <div class="seg" id="mode">
+        <button data-v="solo" class="on">Solo vs bots</button><button data-v="multi">Multiplayer (host)</button>
+      </div>
+    </div>
+    <div class="field hidden" id="humans-field">Human seats (including you)
+      <div class="seg" id="humans"></div>
+      <small>Friends join with the room link. Seats nobody claims are filled by Fold-A2 v4.2 when you start.</small>
+    </div>
+
+    <div class="field">Opponents
+      <div class="seg wrap" id="preset">
+        <button data-v="v4" class="on">All Fold-A2 v4.2</button>
+        <button data-v="mix">v4.2 + v3.5 + ladder bots</button>
+        <button data-v="ladder">Ladder bot copies</button>
+        <button data-v="custom">Pick each seat</button>
+      </div>
+      <div id="custom" class="custom hidden"></div>
+    </div>
+
+    <div class="row" id="ko-opts">
+      <div class="field">Starting chips
+        <div class="seg" id="stack"><button data-v="200" class="on">200</button><button data-v="500">500</button><button data-v="1000">1000</button></div>
+      </div>
+      <div class="field">Blinds go up
+        <div class="seg" id="levels"><button data-v="10" class="on">Every 10 hands</button><button data-v="20">Every 20</button><button data-v="0">Never</button></div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="field" id="hands-field">Hands
+        <div class="seg" id="hands"><button data-v="20">20</button><button data-v="50" class="on">50</button><button data-v="100">100</button></div>
+      </div>
+      <div class="field">Bot speed
+        <div class="seg" id="speed"><button data-v="0.25">Fast</button><button data-v="0.7" class="on">Normal</button><button data-v="1.4">Slow</button></div>
+      </div>
+    </div>
+
+    <button id="go" class="primary big">Deal me in</button>
+    <p id="setup-err" class="err"></p>
+  </div>
+</section>
+
+<!-- join (opened from a room link) -->
+<section id="join" class="screen hidden">
+  <div class="panel setup-panel">
+    <h1>Join table</h1>
+    <p class="sub" id="join-info">Loading room…</p>
+    <label class="field">Your name <input id="join-name" maxlength="20" placeholder="Player"></label>
+    <button id="join-go" class="primary big">Take a seat</button>
+    <p id="join-err" class="err"></p>
+  </div>
+</section>
+
+<!-- lobby -->
+<section id="lobby" class="screen hidden">
+  <div class="panel setup-panel">
+    <h1>Waiting for players</h1>
+    <p class="sub">Share this link with friends on the same network:</p>
+    <div class="link-row"><input id="share" readonly><button id="copy">Copy</button></div>
+    <ul id="lobby-list" class="lobby-list"></ul>
+    <button id="start" class="primary big">Start game</button>
+    <p class="sub" id="lobby-wait"></p>
+  </div>
+</section>
+
+<!-- table -->
+<section id="game" class="screen hidden">
+  <header class="topbar">
+    <div class="brand">Fold A2</div>
+    <div id="hand-no" class="pill"></div>
+    <div class="spacer"></div>
+    <button id="replay-btn" class="ghost hidden">Rewatch hands</button>
+    <button id="share-btn" class="ghost hidden">Invite link</button>
+    <button id="leave" class="ghost">Leave</button>
+  </header>
+  <div class="layout">
+    <div class="table-wrap">
+      <div class="table" id="table">
+        <div class="felt">
+          <div class="center">
+            <div id="pot" class="pot"></div>
+            <div id="board" class="board"></div>
+            <div id="banner" class="banner"></div>
+          </div>
+        </div>
+        <div id="seats-layer"></div>
+      </div>
+      <div class="actions" id="actions">
+        <div id="wait-msg" class="wait-msg"></div>
+        <div id="my-controls" class="controls hidden">
+          <button id="b-fold" class="act fold">Fold <kbd>F</kbd></button>
+          <button id="b-call" class="act call">Check <kbd>C</kbd></button>
+          <div class="raise-box">
+            <div class="presets">
+              <button data-f="min">Min</button><button data-f="0.5">½ pot</button><button data-f="0.75">¾ pot</button><button data-f="1">Pot</button><button data-f="allin">All-in</button>
+            </div>
+            <div class="slider-row">
+              <input type="range" id="r-slider">
+              <input type="number" id="r-amt">
+            </div>
+          </div>
+          <button id="b-raise" class="act raise">Raise <kbd>R</kbd></button>
+        </div>
+        <div id="next-controls" class="controls hidden">
+          <button id="b-next" class="act call">Next hand <kbd>Space</kbd></button>
+          <span id="next-timer" class="muted"></span>
+        </div>
+      </div>
+    </div>
+    <aside class="side">
+      <h3>Standings</h3>
+      <ol id="scores" class="scores"></ol>
+      <h3>Hand log</h3>
+      <div id="log" class="log"></div>
+    </aside>
+  </div>
+  <div id="final" class="final hidden">
+    <div class="panel">
+      <h2>Game over</h2>
+      <ol id="final-list" class="scores big"></ol>
+      <button id="final-replay" class="ghost big-ghost">Rewatch hands</button>
+      <button id="again" class="primary big">Play again</button>
+    </div>
+  </div>
+  <div id="replay" class="replay hidden">
+    <div class="replay-box">
+      <div class="replay-head"><b id="rp-title">Rewatch</b><button id="rp-close" class="ghost">Close ✕</button></div>
+      <div class="replay-body">
+        <ol id="rp-list" class="rp-list"></ol>
+        <div class="rp-view">
+          <div class="table rp-table">
+            <div class="felt"><div class="center"><div id="rp-pot" class="pot"></div><div id="rp-board" class="board"></div></div></div>
+            <div id="rp-seats" class="seats-abs"></div>
+          </div>
+          <div id="rp-caption" class="rp-caption"></div>
+          <div class="rp-controls">
+            <button id="rp-first" class="ghost">⏮</button><button id="rp-prev" class="ghost">◀ Back</button>
+            <button id="rp-play" class="primary">▶ Play</button>
+            <button id="rp-next" class="ghost">Next ▶</button><button id="rp-last" class="ghost">⏭</button>
+          </div>
+          <small class="muted">← → step · Space play/pause · Esc close. You see your own cards, every bot's cards, and other players' cards only if they were shown.</small>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script src="app.js"></script>
+</body>
+</html>
